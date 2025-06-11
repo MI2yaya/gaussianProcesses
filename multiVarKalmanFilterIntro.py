@@ -5,6 +5,7 @@ from numpy.random import randn
 from collections import namedtuple
 from scipy.linalg import solve
 from filterpy.common import Q_discrete_white_noise
+import matplotlib.pyplot as plt
 gaussian = namedtuple('Gaussian', ['mean', 'var'])
 gaussian.__repr__ = lambda s: f'𝒩(μ={s[0]:.3f}, 𝜎²={s[1]:.3f})'
 
@@ -120,6 +121,8 @@ def run(x0=(0.,0.), P=500, R=0, Q=0, dt=1.0,
         
         P = (I-KH)P #adjusts P based on kalman gain (ratio)
         
+        How is velocity updated?
+        K_vol = cov(pos,vol)/(var(pos)+var(measurement))
         
         '''
         xs.append(kf.x)
@@ -131,3 +134,21 @@ def run(x0=(0.,0.), P=500, R=0, Q=0, dt=1.0,
 
 P = np.diag([500., 49.]) #state covar
 Ms, Ps = run(count=50, R=10, Q=0.01, P=P)
+
+
+P = np.diag([500., 49.])
+f = pos_vel_filter(x=(0., 0.), R=3., Q=.02, P=P)
+track, zs = compute_dog_data(3., .02, count=50)
+Xs, Covs, _, _ = f.batch_filter(zs) #does all measurements at once, is really just a loop lol
+Ms, Ps, _, _ = f.rts_smoother(Xs, Covs) #smooths means, covariances, and kalman gains 
+
+#compare kalman velocity vs rts velocity
+dx = np.diff(Xs[:, 0], axis=0)
+plt.scatter(range(1, len(dx) + 1), dx, facecolor='none', 
+            edgecolor='k', lw=2, label='Raw velocity') 
+plt.plot(Xs[:, 1], ls='--', label='Kalman Velocity')
+plt.plot(Ms[:, 1], label='RTS Velocity')
+plt.legend(loc=4)
+plt.gca().axhline(1, lw=1, c='k')
+plt.show()
+
