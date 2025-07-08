@@ -40,9 +40,9 @@ class RFFFeatureMap(torch.nn.Module):
 
 # Custom GP model using Linear Kernel on RFF
 class RFFGPModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood, num_rff_features=100):
+    def __init__(self, train_x, train_y, likelihood, num_rff_features=100,input_dim=1):
         super().__init__(train_x, train_y, likelihood)
-        self.feature_map = RFFFeatureMap(input_dim=1, num_features=num_rff_features)
+        self.feature_map = RFFFeatureMap(input_dim=input_dim, num_features=num_rff_features)
         self.mean_module = gpytorch.means.ConstantMean()
         self.covar_module = gpytorch.kernels.LinearKernel()
 

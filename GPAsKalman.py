@@ -4,17 +4,21 @@ import matplotlib.pyplot as plt
 from collections import namedtuple
 from numpy.random import randn
 import math
+from filterpy.kalman import predict, update, KalmanFilter
+from filterpy.common import Q_discrete_white_noise
+from sklearn.metrics import mean_squared_error
+from numpy.random import randn, seed
+import time
 
-def compute_dog_data(z_var, process_var, count=1, dt=1.):
+
+def compute_dog_data(z_var, process_var, count=1, dt=.1):
     "returns track, measurements 1D ndarrays"
-    print(z_var)
-    print(process_var)
     x, vel = 0., 1.
     z_std = math.sqrt(z_var) 
     p_std = math.sqrt(process_var)
     xs, zs = [], []
     for _ in range(count):
-        v = vel + (randn() * p_std)
+        v = vel
         x += v*dt        
         xs.append(x)
         zs.append(x + randn() * z_std)        
@@ -37,20 +41,16 @@ def gp_kernal(P,A,Q,C,N):
 
     return K
 
-def kalman_predict(x,P,F,Q):
-    x = F @ x
-    P = F @ P @ F.T + Q
-    return(x,P)
+def makeKF(x,P,F,Q,H,R):
+    kf = KalmanFilter(dim_x=2, dim_z=1)
+    kf.x = x
+    kf.F = F
+    kf.H = H
+    kf.R *= R
+    kf.P = P
+    kf.Q = Q  
+    return kf
 
-
-def update(x,P,z,R,H):
-    y = z - H @ x
-    S = H @ P @ H.T + R
-    K = P @ H.T @ np.linalg.inv(S)
-    x = x +K @ y
-    P = (np.eye(len(x)) - K@H)@P
-    return x,P
-    
 dt=.1 #time scale
 N=100
 #initial belief
@@ -59,30 +59,27 @@ P = np.diag([500.,49])      #state covar
 P0 = np.diag([500.,49]) 
 
 #state
-A = np.array([[1,dt],[0,1]]) #state transition matrix
+F = np.array([[1,dt],[0,1]]) #state transition matrix
 Q = np.array([[0.01, 0.],
               [0., 0.01]])   #process noise covar
 
 #measurement
 H = np.array([[1., 0.]])     #state to measurement
-R=np.array([[1]])           #measurement noise covar
+R = np.array([[1]])           #measurement noise covar
 
 track, zs = compute_dog_data(R[0, 0], Q[0, 0], count=N,dt=dt) #data
-xs, cov = [], [] #predictions/cycle
-for i,z in enumerate(zs,start=1):
-    x, P = kalman_predict(x=x,P=P,F=A,Q=Q) #estimate
-    x, P = update(x, P, z, R, H) #given measurement, use kalman gain and update!
-    xs.append(x)
-    cov.append(P)
-    print(f"Cycle {i}: Post:{x} as Pos,vol; Covar:{P}, Actual:{track[i-1]}")
 
+
+kf = makeKF(x,P,F,Q,H,R)
+xs, cov, _, _ = kf.batch_filter(zs)
+xs, cov, _, _ = kf.rts_smoother(xs, cov)
 
 # Build the GP kernel from Kalman structure
-K_clean = gp_kernal(P0, A, Q, H, N)
+K_clean = gp_kernal(P0, F, Q, H, N)
 K_obs = K_clean + R[0, 0] * np.eye(N)
 mu_post = K_clean @ np.linalg.inv(K_obs) @ zs
 
-xs = np.array(xs)
+
 plt.plot(track, label='True Position')
 plt.plot(zs, label='Measurements', linestyle='dotted')
 plt.plot(xs[:, 0], label='Kalman Estimate')
@@ -93,3 +90,62 @@ plt.ylabel('Position')
 plt.title('Kalman Filter on Dog Position Tracking')
 plt.grid()
 plt.show()
+
+
+
+
+
+
+
+####DATAAAAA###########
+
+random.seed(5)
+seed(5)
+
+KFTimes = []
+KFMSEs = []
+GPTimes = []
+GPMSEs= []
+
+trials = 100
+for cycle in range(trials):
+    kf = makeKF(x,P,F,Q,H,R)
+    startKF = time.time()
+    xs, cov, _, _ = kf.batch_filter(zs)
+    xs, cov, _, _ = kf.rts_smoother(xs, cov)
+    KFEnd = time.time() - startKF
+    
+    # Build the GP kernel from Kalman structure
+    startGP = time.time()
+    K_clean = gp_kernal(P0, F, Q, H, N)
+    K_obs = K_clean + R[0, 0] * np.eye(N)
+    mu_post = K_clean @ np.linalg.inv(K_obs) @ zs
+    GPEnd = time.time() - startGP
+    
+    KFTimes.append(KFEnd)
+    KFMSEs.append(mean_squared_error(y_pred=xs[:, 0],y_true=track))
+    GPTimes.append(GPEnd)
+    GPMSEs.append(mean_squared_error(y_pred=mu_post,y_true=track))
+    print(f"{cycle+1}/{trials} Cycles done :)")
+
+fig = plt.figure(figsize=(15, 6))
+
+ax1 = fig.add_subplot(121)
+ax1.hist(KFTimes, bins=10, alpha=0.6, label='Kalman RTS Times', color='skyblue', edgecolor='black')
+ax1.set_xlabel('Time (s)')
+ax1.set_ylabel("Frequency")
+ax1.set_title("Histrogram of Kalman RTS Times")
+
+ax2 = fig.add_subplot(122)
+ax2.hist(GPTimes, bins=10, alpha=0.6, label='Kalman RTS Times', color='salmon', edgecolor='black')
+ax2.set_xlabel('Time (s)')
+ax2.set_ylabel("Frequency")
+ax2.set_title("Histrogram of GP Regression Times")
+
+print(f"KF MSE Average: {sum(KFMSEs)/len(KFMSEs)}")
+print(f"GP MSE Average: {sum(GPMSEs)/len(GPMSEs)}")
+
+plt.tight_layout()
+plt.show()
+
+fig.savefig("GPAsKalman.png", dpi=300, bbox_inches='tight')
