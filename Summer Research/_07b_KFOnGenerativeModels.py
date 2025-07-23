@@ -1,7 +1,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from filterpy.kalman import predict, update, KalmanFilter
+from filterpy.kalman import KalmanFilter
 from sklearn.metrics import mean_squared_error
 
 def plot(xs,ys,Ms,title="",show=True):
