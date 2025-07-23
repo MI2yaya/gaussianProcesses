@@ -13,8 +13,8 @@ def plot(xs,ys,Ms,title="",show=True):
     plt.legend()
     plt.show()
 
-kTrials=10
-
+kTrials=1
+time=1000
 '''
 7.1 Scalar random walk
 '''
@@ -32,7 +32,7 @@ def scalarRandomWalk(trials=10, r=1, q=1):
     return xs,ys
 
 errors= []
-xs, ys = scalarRandomWalk(trials=10)
+xs, ys = scalarRandomWalk(trials=time)
 for trial in range(kTrials):
     kf = KalmanFilter(dim_x=1, dim_z=1)
     kf.x = np.array([0.])  # initial state
@@ -46,10 +46,14 @@ for trial in range(kTrials):
     Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
 
     errors.append(mean_squared_error(xs, Ms))
-print(f"Average Scalar Random Walk RMSE over {kTrials} trials: {np.mean(errors):.3f}")
+print(f"Average Scalar Random Walk RMSE over {kTrials} trials: {np.mean(errors):.3f}") #MEDIAN
 
 plot(xs, ys, Ms, title="Scalar Random Walk")
-
+plt.hist(errors, bins=30)
+plt.title("Distribution of Errors")
+plt.xlabel("RMSE")
+plt.ylabel("Frequency")
+plt.show()
 
 
 '''
@@ -72,7 +76,7 @@ def constantVelocityModel(trials=10, dt=1, r=1, q=1):
         ys.append(y_observed)
     return xs, ys
 dt=1
-xs, ys = constantVelocityModel(dt=dt)
+xs, ys = constantVelocityModel(trials=time,dt=dt)
 errors = []
 for trial in range(kTrials):
     # Initialize Kalman Filter
@@ -120,6 +124,13 @@ ax3.set_title("X-Velocity")
 ax4.set_title("Y-Velocity")
 fig.legend(loc="lower right")
 plt.show()
+
+plt.hist(errors, bins=30, alpha=0.7)
+plt.title("Distribution of Errors")
+plt.xlabel("RMSE")
+plt.ylabel("Frequency")
+plt.show()
+
 '''
 7.3 Mass-Spring Chain with N identical masses
 x = [p1(t) v1(t) ... pn(t) vn(t)]
@@ -148,7 +159,7 @@ def massSpringChain(N=3, trials=10, dt=1, r=1, q=1):
         ys.append(y_observed)
     return xs, ys
 N = 3
-xs, ys = massSpringChain(N=N)
+xs, ys = massSpringChain(N=N,trials=time)
 errors = []
 for trial in range(kTrials):
     kf = KalmanFilter(dim_x=2 * N, dim_z=N)
@@ -202,4 +213,10 @@ for s in range(0,N):
     ax3.plot(t,s_yps)
 fig.legend(loc="lower right")
 plt.tight_layout()
+plt.show()
+
+plt.hist(errors, bins=30, alpha=0.7)
+plt.title("Distribution of Errors")
+plt.xlabel("RMSE")
+plt.ylabel("Frequency")
 plt.show()
