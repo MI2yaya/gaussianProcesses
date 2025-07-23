@@ -86,7 +86,7 @@ def observation(y,N,r=1):
     return y + v
 
 N=10
-dt=1
+dt=.1
 trials=10
 x = np.random.multivariate_normal(np.zeros(2*N),np.eye(2*N))
 xs=[x]
@@ -99,12 +99,18 @@ for _ in range(trials):
     ys.append(y)
 
 fig = plt.figure(figsize=(13,8))
-
+plt.axis("off")
 plt.title(f"Mass-Spring Chain with {N} Masses")
 t= np.linspace(0,dt*len(xs),len(xs))
 ax1 = fig.add_subplot(221)
 ax2 = fig.add_subplot(222)
 ax3 = fig.add_subplot(223)
+ax1.set_xlabel("Time (s)")
+ax2.set_xlabel("Time (s)")
+ax3.set_xlabel("Time (s)")
+ax1.set_ylabel("Position")
+ax2.set_ylabel("Velocity")
+ax3.set_ylabel("Position-Observation")
 ax1.set_title("Position-State")
 ax2.set_title("Velocity-State")
 ax3.set_title("Position-Observation")
@@ -114,9 +120,9 @@ for s in range(0,N):
     s_xps = [x[2*s] for x in xs]
     s_xvs = [x[2*s+1] for x in xs]
     s_yps = [y[s] for y in ys]
-    ax1.plot(t,s_xps, label=f"#{s}")
+    ax1.plot(t,s_xps, label=f"Mass-Chain #{s+1}")
     ax2.plot(t,s_xvs)
     ax3.plot(t,s_yps)
-fig.legend()
+fig.legend(loc="lower right")
 plt.tight_layout()
 plt.show()
