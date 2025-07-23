@@ -18,7 +18,7 @@ kTrials=10
 '''
 7.1 Scalar random walk
 '''
-def scalarRandomWalk(trials=10, dt=1,r=1, q=1):
+def scalarRandomWalk(trials=10, r=1, q=1):
     x_initial = np.random.normal(0, 1)
     xs = [x_initial]
     ys = [x_initial]
@@ -32,7 +32,7 @@ def scalarRandomWalk(trials=10, dt=1,r=1, q=1):
     return xs,ys
 
 errors= []
-xs, ys = scalarRandomWalk(trials=kTrials)
+xs, ys = scalarRandomWalk(trials=10)
 for trial in range(kTrials):
     kf = KalmanFilter(dim_x=1, dim_z=1)
     kf.x = np.array([0.])  # initial state
