@@ -131,7 +131,8 @@ def main(dimensions,grid_size,noise_std,training_iter,early_stop_loss,features,K
     seed(5)
     
     for trial in range(KTrials):
-        print(f"Trial: {trial+1}/{KTrials}")
+        startTime= time.time()
+        print((f"Trial: {trial+1}/{KTrials}") + (f" Time for Last Trial: {totalTime:.2f}s" if 'totalTime' in locals() else ""))
         #GP Model
         GPLikelihood = gpytorch.likelihoods.GaussianLikelihood()
         GPModel = ExactGPModel(train_x,train_y,GPLikelihood)
@@ -176,17 +177,19 @@ def main(dimensions,grid_size,noise_std,training_iter,early_stop_loss,features,K
         StructuredORFMSEs.append(StructuredORFMetrics["MSE"])
         StructuredORFTestingTimes.append(StructuredORFMetrics["Time"])
         
-    print(f"\nGP: \n Training | Average Time : {mean(GPTrainingTimes)}, Average Iterations : {mean(GPIterationCounts)} \n Testing | Average Time: {mean(GPTestingTimes)}, Average MSE: {mean(GPMSEs)}")
-    print(f"\nRFF: \n Training | Average Time : {mean(RFFTrainingTimes)}, Average Iterations : {mean(RFFIterationCounts)} \n Testing | Average Time: {mean(RFFTestingTimes)}, Average MSE: {mean(RFFMSEs)}")
-    print(f"\nORF: \n Training | Average Time : {mean(ORFTrainingTimes)}, Average Iterations : {mean(ORFIterationCounts)} \n Testing | Average Time: {mean(ORFTestingTimes)}, Average MSE: {mean(ORFMSEs)}")
-    print(f"\nStructuredORF: \n Training | Time : {mean(StructuredORFTrainingTimes)}, Iterations : {mean(StructuredORFIterationCounts)} \n Testing | Average Time: {mean(StructuredORFTestingTimes)}, Average MSE: {mean(StructuredORFMSEs)}")
+        totalTime=time.time() - startTime
+    print(f"\nDetails | Dimensions : {dimensions}, grid_size : {grid_size}, noise_std : {noise_std}, training_iter : {training_iter}, early_stop_loss : {early_stop_loss}, features(RFF+) : {features}, KTrials: {KTrials}")
+    print(f"\nGP: \n Training | Average Time : {mean(GPTrainingTimes):.2f}s, Average Iterations : {mean(GPIterationCounts)} \n Testing | Average Time: {mean(GPTestingTimes):.2f}s, Average MSE: {mean(GPMSEs):.4f}")
+    print(f"\nRFF: \n Training | Average Time : {mean(RFFTrainingTimes):.2f}s, Average Iterations : {mean(RFFIterationCounts)} \n Testing | Average Time: {mean(RFFTestingTimes):.2f}s, Average MSE: {mean(RFFMSEs):.4f}")
+    print(f"\nORF: \n Training | Average Time : {mean(ORFTrainingTimes):.2f}s, Average Iterations : {mean(ORFIterationCounts)} \n Testing | Average Time: {mean(ORFTestingTimes):.2f}s, Average MSE: {mean(ORFMSEs):.4f}")
+    print(f"\nStructuredORF: \n Training | Average Time : {mean(StructuredORFTrainingTimes):.2f}s, Average Iterations : {mean(StructuredORFIterationCounts)} \n Testing | Average Time: {mean(StructuredORFTestingTimes):.2f}s, Average MSE: {mean(StructuredORFMSEs):.4f}")
     
 
-dimensions = 2
-grid_size = 10
-noise_std = 0.1
+dimensions = 1
+grid_size = 50
+noise_std = .1
 training_iter = 100
-early_stop_loss = 0.05
+early_stop_loss = 0.01
 features = 100
-KTrials=5
-main(dimensions,grid_size,noise_std,training_iter,early_stop_loss,features,KTrials=5)
+KTrials=15
+main(dimensions,grid_size,noise_std,training_iter,early_stop_loss,features,KTrials,showTraining=False)

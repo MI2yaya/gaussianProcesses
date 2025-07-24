@@ -119,7 +119,7 @@ for cycle in range(trials):
     startGP = time.time()
     K_clean = gp_kernal(P0, F, Q, H, N)
     K_obs = K_clean + R[0, 0] * np.eye(N)
-    mu_post = K_clean @ np.linalg.inv(K_obs) @ zs
+    mu_post = K_clean @ np.linalg.inv(K_obs) @ zs #Implement Thomas Algorithm !!!!
     GPEnd = time.time() - startGP
     
     KFTimes.append(KFEnd)
@@ -147,5 +147,3 @@ print(f"GP MSE Average: {sum(GPMSEs)/len(GPMSEs)}")
 
 plt.tight_layout()
 plt.show()
-
-fig.savefig("GPAsKalman.png", dpi=300, bbox_inches='tight')
