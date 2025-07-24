@@ -13,8 +13,8 @@ def f(x,noise_std):
 grid_size = 20
 x1 = torch.linspace(0, 1, grid_size)
 x2 = torch.linspace(0, 1, grid_size)
-X1, X2 = torch.meshgrid(x1, x2, indexing='ij')
-train_x = torch.stack([X1.reshape(-1), X2.reshape(-1)], dim=-1) 
+x1, x2 = torch.meshgrid(x1, x2, indexing='ij')
+train_x = torch.stack([x1.reshape(-1), x2.reshape(-1)], dim=-1) 
 
 noise_std = 0.1
 
