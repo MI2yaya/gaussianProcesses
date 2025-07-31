@@ -3,23 +3,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from filterpy.kalman import KalmanFilter
 from sklearn.metrics import mean_squared_error
+import os,sys
+from Defined.Helpers.plotting import plotMSE, plotHist 
 
-def plot(xs,ys,Ms,title="",show=True):
-    plt.plot(xs, label='True States')
-    plt.plot(ys, label='Observations')
-    plt.plot(Ms, label='Kalman Filter Estimate')
-    plt.title(title)
-    plt.xlabel("Time Steps")
-    plt.legend()
-    plt.show()
 
-kTrials=1
+kTrials=50
 time=1000
+np.random.seed(42)
+r=1
+q=1
 '''
 7.1 Scalar random walk
 '''
 def scalarRandomWalk(trials=10, r=1, q=1):
-    x_initial = np.random.normal(0, 1)
+    x_initial = np.random.normal(0, r)
     xs = [x_initial]
     ys = [x_initial]
     x=x_initial
@@ -31,31 +28,25 @@ def scalarRandomWalk(trials=10, r=1, q=1):
         ys.append(y)
     return xs,ys
 
-errors= []
-xs, ys = scalarRandomWalk(trials=time)
 for trial in range(kTrials):
+    xs, ys = scalarRandomWalk(trials=time,r=r,q=q)
+
     kf = KalmanFilter(dim_x=1, dim_z=1)
-    kf.x = np.array([0.])  # initial state
-    kf.P = np.eye(1) * 500  # initial covariance
+    kf.x = np.array([ys[0]])  # initial state
+    kf.P = np.eye(1)  # initial covariance
     kf.F = np.array([[1]])  # state transition matrix
     kf.H = np.array([[1]])  # observation matrix
-    kf.R = np.array([[1]])  # observation noise covariance
-    kf.Q = np.array([[1]])  # process noise covariance
+    kf.R = np.array([[r*10]])  # observation noise covariance
+    kf.Q = np.array([[q*10]])  # process noise covariance
 
     Xs, Covs, _, _ = kf.batch_filter(ys)
     Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
 
-    errors.append(mean_squared_error(xs, Ms))
-print(f"Average Scalar Random Walk RMSE over {kTrials} trials: {np.mean(errors):.3f}") #MEDIAN
+    if trial==0 :
+        plotMSE(xs, ys, Ms, r, q, save=False, name="_07p1a_scalar_random_walk.png")
 
-plot(xs, ys, Ms, title="Scalar Random Walk")
-plt.hist(errors, bins=30)
-plt.title("Distribution of Errors")
-plt.xlabel("RMSE")
-plt.ylabel("Frequency")
-plt.show()
-
-
+plotHist(xs,ys,Ms, r, q, time, kTrials, save=False, name="_07p1b_scalar_random_walk_errors.png")
+raise ValueError
 '''
 7.2 Constant Velocity Model
 x = [px,vx,py,vy]
@@ -77,7 +68,10 @@ def constantVelocityModel(trials=10, dt=1, r=1, q=1):
     return xs, ys
 dt=1
 xs, ys = constantVelocityModel(trials=time,dt=dt)
-errors = []
+measurementErrorsX = []
+stateErrorsX = []
+measurementErrorsY = []
+stateErrorsY = []
 for trial in range(kTrials):
     # Initialize Kalman Filter
     kf = KalmanFilter(dim_x=4, dim_z=2)
@@ -90,8 +84,10 @@ for trial in range(kTrials):
     Xs, Covs, _, _ = kf.batch_filter(ys)
     Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
 
-    errors.append(mean_squared_error(xs, Ms))
-print(f"Average Constant Velocity Model RMSE over {kTrials} trials: {np.mean(errors):.3f}")
+    stateErrorsX.append(mean_squared_error([x[0] for x in xs], [m[0] for m in Ms]))
+    stateErrorsY.append(mean_squared_error([x[2] for x in xs], [m[2] for m in Ms]))
+    measurementErrorsX.append(mean_squared_error([y[0] for y in ys], [m[0] for m in Ms]))
+    measurementErrorsY.append(mean_squared_error([y[1] for y in ys], [m[2] for m in Ms]))
 
 fig = plt.figure(figsize=(13,10))
 plt.axis("off")
@@ -123,20 +119,49 @@ ax2.set_title("Y-Position")
 ax3.set_title("X-Velocity")
 ax4.set_title("Y-Velocity")
 fig.legend(loc="lower right")
-plt.show()
+#plt.savefig("_07p2a_constant_velocity_model.png")
+#plt.show()
 
-plt.hist(errors, bins=30, alpha=0.7)
-plt.title("Distribution of Errors")
-plt.xlabel("RMSE")
-plt.ylabel("Frequency")
-plt.show()
-
+fig = plt.figure(figsize=(12, 6))
+plt.title(f"Constant Velocity Model Error; time={time}, trials={kTrials}")
+plt.axis("off")
+ax1 = fig.add_subplot(221)
+ax1.hist(stateErrorsX, bins=30, alpha=0.7)
+ax1.set_title("State X")
+ax1.set_xlabel("RMSE")
+ax1.set_ylabel("Frequency")
+ax1.text(0.5, 0.9, f"Mean: {np.mean(stateErrorsX):.3f}\nMedian: {np.median(stateErrorsX):.3f}",
+             transform=ax1.transAxes, fontsize=12, verticalalignment='top')
+ax2 = fig.add_subplot(222)
+ax2.hist(stateErrorsY, bins=30, alpha=0.7)
+ax2.set_title("State Y")
+ax2.set_xlabel("RMSE")
+ax2.set_ylabel("Frequency")
+ax2.text(0.5, 0.9, f"Mean: {np.mean(stateErrorsY):.3f}\nMedian: {np.median(stateErrorsY):.3f}",
+                transform=ax2.transAxes, fontsize=12, verticalalignment='top')
+ax3 = fig.add_subplot(223)
+ax3.hist(measurementErrorsX, bins=30, alpha=0.7)
+ax3.set_title("Measurement X")
+ax3.set_xlabel("RMSE")
+ax3.set_ylabel("Frequency")
+ax3.text(0.5, 0.9, f"Mean: {np.mean(measurementErrorsX):.3f}\nMedian: {np.median(measurementErrorsX):.3f}", 
+         transform=ax3.transAxes, fontsize=12, verticalalignment='top')
+ax4 = fig.add_subplot(224)
+ax4.hist(measurementErrorsY, bins=30, alpha=0.7)
+ax4.set_title("Measurement Y")
+ax4.set_xlabel("RMSE")
+ax4.set_ylabel("Frequency")
+ax4.text(0.5, 0.9, f"Mean: {np.mean(measurementErrorsY):.3f}\nMedian: {np.median(measurementErrorsY):.3f}",
+         transform=ax4.transAxes, fontsize=12, verticalalignment='top')
+plt.tight_layout()
+#plt.savefig("_07p2b_constant_velocity_model_errors.png")
+#plt.show()
 '''
 7.3 Mass-Spring Chain with N identical masses
 x = [p1(t) v1(t) ... pn(t) vn(t)]
 '''
 
-def massSpringChain(N=3, trials=10, dt=1, r=1, q=1):
+def massSpringChain(N=3, trials=10, dt=.1, r=1, q=1):
     x_initial = np.random.multivariate_normal(np.zeros(2 * N), np.eye(2 * N))
     xs = [x_initial]
     ys = [np.array([x_initial[i] for i in range(0, 2 * N, 2)])]
@@ -160,7 +185,8 @@ def massSpringChain(N=3, trials=10, dt=1, r=1, q=1):
     return xs, ys
 N = 3
 xs, ys = massSpringChain(N=N,trials=time)
-errors = []
+stateErrors = [] 
+measurementErrors = []
 for trial in range(kTrials):
     kf = KalmanFilter(dim_x=2 * N, dim_z=N)
     kf.x = np.zeros(2 * N)
@@ -179,8 +205,9 @@ for trial in range(kTrials):
     Xs, Covs, _, _ = kf.batch_filter(ys)
     Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
 
-    errors.append(mean_squared_error([x[0] for x in xs], [m[0] for m in Ms]))
-print(f"Average Mass Spring Chain RMSE over {kTrials} trials: {np.mean(errors):.3f}")
+    for i in range(N):
+        stateErrors.append([mean_squared_error([x[i*2] for x in xs], [m[i*2] for m in Ms])])
+        measurementErrors.append([mean_squared_error([y[i] for y in ys], [m[i*2] for m in Ms])])
 
 fig = plt.figure(figsize=(13,8))
 plt.axis("off")
@@ -213,10 +240,28 @@ for s in range(0,N):
     ax3.plot(t,s_yps)
 fig.legend(loc="lower right")
 plt.tight_layout()
-plt.show()
+#plt.savefig("_07p3a_mass_spring_chain.png")
+#plt.show()
 
-plt.hist(errors, bins=30, alpha=0.7)
-plt.title("Distribution of Errors")
-plt.xlabel("RMSE")
-plt.ylabel("Frequency")
+fig = plt.figure(figsize=(12, 6))
+plt.title(f"Mass-Spring Chain Error; N={N}, time={time}, trials={kTrials}")
+plt.axis("off")
+
+for i in range(3):
+    ax = fig.add_subplot(231+ i)
+    ax.hist(stateErrors[i], bins=30, alpha=0.7)
+    ax.set_title(f"State-X #{i+1}")
+    ax.set_xlabel("RMSE")
+    ax.set_ylabel("Frequency")
+    ax.text(0.5, 0.9, f"Mean: {np.mean(stateErrors[i]):.3f}\nMedian: {np.median(stateErrors[i]):.3f}",
+             transform=ax.transAxes, fontsize=12, verticalalignment='top')
+    ax = fig.add_subplot(231+ i+3)
+    ax.hist(measurementErrors[i], bins=30, alpha=0.7)
+    ax.set_title(f"Measurement-X #{i+1}")
+    ax.set_xlabel("RMSE")
+    ax.set_ylabel("Frequency")
+    ax.text(0.5, 0.9, f"Mean: {np.mean(measurementErrors[i]):.3f}\nMedian: {np.median(measurementErrors[i]):.3f}",
+             transform=ax.transAxes, fontsize=12, verticalalignment='top')
+plt.tight_layout()
+plt.savefig("_07p3b_mass_spring_chain_errors.png")
 plt.show()
