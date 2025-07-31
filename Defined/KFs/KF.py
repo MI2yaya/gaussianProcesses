@@ -11,11 +11,9 @@ class KalmanFilter:
 
         self.R = R  # measurement noise covariance
     
-
-
-    def predict(self, u):
+    def predict(self):
         # Predict the next state
-        self.x = self.F @ self.x + u
+        self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q  # Update covariance
         return self.x, self.P
     
@@ -30,21 +28,14 @@ class KalmanFilter:
     
     def batch_filter(self, measurements):
         estimates = []
+        covars = []
         for z in measurements:
-            self.x, self.P = self.predict(z)
+            self.x, self.P = self.predict()
             self.x, self.P = self.update(z)
             estimates.append(self.x)
-        return estimates
+            covars.append(self.P)
+        return estimates,covars
     
-    def rts_smoother(self, measurements):
-        n = len(measurements)
-        smoothed_estimates = np.zeros((n, self.x.shape[0]))
-        smoothed_estimates[-1] = self.x
-        P = self.P.copy()
-        for i in range(n - 2, -1, -1):
-            F = self.F
-            H = self.H
-            K = P @ H.T @ np.linalg.inv(H @ P @ H.T + self.R)
-            smoothed_estimates[i] = self.x + K @ (smoothed_estimates[i + 1] - F @ self.x)
-            P = P + K @ (P - F @ P) @ K.T
-        return smoothed_estimates
+    def rts_smoother(self, measurements, covariances):
+        ##
+        return(measurements, covariances)  # Placeholder for RTS smoother implementation

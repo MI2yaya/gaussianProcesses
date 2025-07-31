@@ -31,10 +31,7 @@ def plotMSE(xs, ys, Ms, r, q, save=False, name="smth.png"):
         plt.savefig(name)
     plt.show()
 
-def plotHist(xs,ys,Ms, r, q, time,kTrials,save=False,name="smth.png"):
-    stateErrors=[mean_squared_error(xs, Ms)]
-    measurementErrors = [mean_squared_error(ys, Ms)]
-    
+def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="smth.png"):
     fig = plt.figure(figsize=(15, 6))
     plt.axis("off")
     plt.title(f"Scalar Random Walk Error; time={time}, trials={kTrials}")

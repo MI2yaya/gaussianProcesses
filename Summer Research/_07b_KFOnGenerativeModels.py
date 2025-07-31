@@ -1,11 +1,12 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from filterpy.kalman import KalmanFilter
 from sklearn.metrics import mean_squared_error
-import os,sys
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.Helpers.plotting import plotMSE, plotHist 
-
+from Defined.KFs.KF import KalmanFilter
 
 kTrials=50
 time=1000
@@ -28,24 +29,32 @@ def scalarRandomWalk(trials=10, r=1, q=1):
         ys.append(y)
     return xs,ys
 
+stateErrors = []
+measurementErrors = []
+
 for trial in range(kTrials):
     xs, ys = scalarRandomWalk(trials=time,r=r,q=q)
 
-    kf = KalmanFilter(dim_x=1, dim_z=1)
-    kf.x = np.array([ys[0]])  # initial state
-    kf.P = np.eye(1)  # initial covariance
-    kf.F = np.array([[1]])  # state transition matrix
-    kf.H = np.array([[1]])  # observation matrix
-    kf.R = np.array([[r*10]])  # observation noise covariance
-    kf.Q = np.array([[q*10]])  # process noise covariance
+    x = np.array([xs[0]])
+    P = np.array([[100]])  # Initial state covariance
+    F = np.array([[1.]])  # State transition matrix
+    Q = np.array([[1]])  # Process noise covariance
+    H = np.array([[1.]])  # Observation matrix
+    R = np.array([[1]])  # Measurement noise covariance
 
-    Xs, Covs, _, _ = kf.batch_filter(ys)
-    Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
+
+    kf = KalmanFilter(x,P,F,H,Q,R)
+
+    Ms, Covs= kf.batch_filter(ys)
+    #Ms= kf.rts_smoother(Ms, Covs)
 
     if trial==0 :
         plotMSE(xs, ys, Ms, r, q, save=False, name="_07p1a_scalar_random_walk.png")
 
-plotHist(xs,ys,Ms, r, q, time, kTrials, save=False, name="_07p1b_scalar_random_walk_errors.png")
+    stateErrors.append(mean_squared_error(xs, Ms))
+    measurementErrors.append(mean_squared_error(ys, Ms))
+
+plotHist(stateErrors,measurementErrors, r, q, time, kTrials, save=False, name="_07p1b_scalar_random_walk_errors.png")
 raise ValueError
 '''
 7.2 Constant Velocity Model
