@@ -32,30 +32,31 @@ def scalarRandomWalk(trials=10, r=1, q=1):
 stateErrors = []
 measurementErrors = []
 
-for trial in range(kTrials):
+for trial in range(0):
     xs, ys = scalarRandomWalk(trials=time,r=r,q=q)
-
     x = np.array([xs[0]])
     P = np.array([[100]])  # Initial state covariance
     F = np.array([[1.]])  # State transition matrix
-    Q = np.array([[1]])  # Process noise covariance
+    Q = np.array([[q]])  # Process noise covariance
     H = np.array([[1.]])  # Observation matrix
-    R = np.array([[1]])  # Measurement noise covariance
+    R = np.array([[r]])  # Measurement noise covariance
 
 
     kf = KalmanFilter(x,P,F,H,Q,R)
 
     Ms, Covs= kf.batch_filter(ys)
+
+    MsX = [ele + np.random.normal(0, q) for ele in Ms]
+    MsY = [ele + np.random.normal(0, r) for ele in Ms]
     #Ms= kf.rts_smoother(Ms, Covs)
+    #if trial==0 :
+        #plotMSE(xs, ys, Ms, r, q, save=True, name="_07p1a_scalar_random_walk.png")
 
-    if trial==0 :
-        plotMSE(xs, ys, Ms, r, q, save=False, name="_07p1a_scalar_random_walk.png")
+    stateErrors.append(mean_squared_error(xs, MsX))
+    measurementErrors.append(mean_squared_error(ys, MsY))
 
-    stateErrors.append(mean_squared_error(xs, Ms))
-    measurementErrors.append(mean_squared_error(ys, Ms))
+#plotHist(stateErrors,measurementErrors, r, q, time, kTrials, save=True, name="_07p1b_scalar_random_walk_errors.png")
 
-plotHist(stateErrors,measurementErrors, r, q, time, kTrials, save=False, name="_07p1b_scalar_random_walk_errors.png")
-raise ValueError
 '''
 7.2 Constant Velocity Model
 x = [px,vx,py,vy]
@@ -76,95 +77,37 @@ def constantVelocityModel(trials=10, dt=1, r=1, q=1):
         ys.append(y_observed)
     return xs, ys
 dt=1
-xs, ys = constantVelocityModel(trials=time,dt=dt)
 measurementErrorsX = []
 stateErrorsX = []
 measurementErrorsY = []
 stateErrorsY = []
 for trial in range(kTrials):
-    # Initialize Kalman Filter
-    kf = KalmanFilter(dim_x=4, dim_z=2)
-    kf.x = np.zeros(4)  
-    kf.P = np.eye(4) * 500 
-    kf.F = np.array([[1, dt, 0, 0], [0, 1, 0, 0], [0, 0, 1, dt], [0, 0, 0, 1]])  # state transition matrix
-    kf.H = np.array([[1, 0, 0, 0], [0, 0, 1, 0]])
-    kf.R = np.eye(2)
-    kf.Q = np.eye(4) * 1 
-    Xs, Covs, _, _ = kf.batch_filter(ys)
-    Ms, Ps, _, _ = kf.rts_smoother(Xs, Covs)
+    xs, ys = constantVelocityModel(trials=time,dt=dt)
+    x = np.zeros(4)  
+    P = np.eye(4) * 500 
+    F = np.array([[1, dt, 0, 0], [0, 1, 0, 0], [0, 0, 1, dt], [0, 0, 0, 1]])
+    H = np.array([[1, 0, 0, 0], [0, 0, 1, 0]])
+    R = np.eye(2)
+    Q = np.eye(4) * 1 
+    kf = KalmanFilter(x, P, F, H, Q, R)
 
-    stateErrorsX.append(mean_squared_error([x[0] for x in xs], [m[0] for m in Ms]))
-    stateErrorsY.append(mean_squared_error([x[2] for x in xs], [m[2] for m in Ms]))
-    measurementErrorsX.append(mean_squared_error([y[0] for y in ys], [m[0] for m in Ms]))
-    measurementErrorsY.append(mean_squared_error([y[1] for y in ys], [m[2] for m in Ms]))
+    Ms, Covs = kf.batch_filter(ys)
 
-fig = plt.figure(figsize=(13,10))
-plt.axis("off")
-plt.title("Constant Velocity Model")
-ax1 = fig.add_subplot(221)
-ax2 = fig.add_subplot(222)
-ax3 = fig.add_subplot(223)
-ax4 = fig.add_subplot(224)
-t = np.linspace(0, dt * len(xs), len(xs))
-ax1.set_xlabel("Time (s)")
-ax2.set_xlabel("Time (s)")
-ax3.set_xlabel("Time (s)")
-ax4.set_xlabel("Time (s)")
+    MsX = [ele + np.random.normal(0, q) for ele in Ms]
+    MsY = [ele + np.random.normal(0, r) for ele in Ms]
 
-ax1.plot(t, [x[0] for x in xs], label="State", color='blue')
-ax1.plot(t, [y[0] for y in ys], label="Obs",color='orange')
-ax2.plot(t, [x[2] for x in xs],color='blue')
-ax2.plot(t, [y[1] for y in ys],color='orange')
-ax1.plot(t, [m[0] for m in Ms],label="Kalman",color='green')
-ax2.plot(t, [m[2] for m in Ms],color='green')
+    stateErrorsX.append(mean_squared_error([x[0] for x in xs], [m[0] for m in MsX]))
+    stateErrorsY.append(mean_squared_error([x[2] for x in xs], [m[2] for m in MsY]))
+    measurementErrorsX.append(mean_squared_error([y[0] for y in ys], [m[0] for m in MsX]))
+    measurementErrorsY.append(mean_squared_error([y[1] for y in ys], [m[2] for m in MsY]))
+    if trial==0:
+        plotMSE([x[0] for x in xs], [y[0] for y in ys], [m[0] for m in MsX], r, q, save=False, name="_07p2a_constant_velocity_model.png",title="Constant Velocity Model X")
+        plotMSE([x[2] for x in xs], [y[1] for y in ys], [m[2] for m in MsY], r, q, save=False, name="_07p2b_constant_velocity_model_y.png",title="Constant Velocity Model Y")
+plotHist(stateErrorsX, measurementErrorsX, r, q, time, kTrials, save=False, name="_07p2c_constant_velocity_model_x_errors.png",title="Constant Velocity Model X Errors")
+plotHist(stateErrorsY, measurementErrorsY, r, q, time, kTrials, save=False, name="_07p2d_constant_velocity_model_y_errors.png",title="Constant Velocity Model Y Errors")
 
-ax3.plot(t, [x[1] for x in xs],color='blue')
-ax3.plot(t, [m[1] for m in Ms],color='green')
-ax4.plot(t, [x[3] for x in xs],color='blue')
-ax4.plot(t, [m[3] for m in Ms],color='green')
+raise ValueError
 
-ax1.set_title("X-Position")
-ax2.set_title("Y-Position")
-ax3.set_title("X-Velocity")
-ax4.set_title("Y-Velocity")
-fig.legend(loc="lower right")
-#plt.savefig("_07p2a_constant_velocity_model.png")
-#plt.show()
-
-fig = plt.figure(figsize=(12, 6))
-plt.title(f"Constant Velocity Model Error; time={time}, trials={kTrials}")
-plt.axis("off")
-ax1 = fig.add_subplot(221)
-ax1.hist(stateErrorsX, bins=30, alpha=0.7)
-ax1.set_title("State X")
-ax1.set_xlabel("RMSE")
-ax1.set_ylabel("Frequency")
-ax1.text(0.5, 0.9, f"Mean: {np.mean(stateErrorsX):.3f}\nMedian: {np.median(stateErrorsX):.3f}",
-             transform=ax1.transAxes, fontsize=12, verticalalignment='top')
-ax2 = fig.add_subplot(222)
-ax2.hist(stateErrorsY, bins=30, alpha=0.7)
-ax2.set_title("State Y")
-ax2.set_xlabel("RMSE")
-ax2.set_ylabel("Frequency")
-ax2.text(0.5, 0.9, f"Mean: {np.mean(stateErrorsY):.3f}\nMedian: {np.median(stateErrorsY):.3f}",
-                transform=ax2.transAxes, fontsize=12, verticalalignment='top')
-ax3 = fig.add_subplot(223)
-ax3.hist(measurementErrorsX, bins=30, alpha=0.7)
-ax3.set_title("Measurement X")
-ax3.set_xlabel("RMSE")
-ax3.set_ylabel("Frequency")
-ax3.text(0.5, 0.9, f"Mean: {np.mean(measurementErrorsX):.3f}\nMedian: {np.median(measurementErrorsX):.3f}", 
-         transform=ax3.transAxes, fontsize=12, verticalalignment='top')
-ax4 = fig.add_subplot(224)
-ax4.hist(measurementErrorsY, bins=30, alpha=0.7)
-ax4.set_title("Measurement Y")
-ax4.set_xlabel("RMSE")
-ax4.set_ylabel("Frequency")
-ax4.text(0.5, 0.9, f"Mean: {np.mean(measurementErrorsY):.3f}\nMedian: {np.median(measurementErrorsY):.3f}",
-         transform=ax4.transAxes, fontsize=12, verticalalignment='top')
-plt.tight_layout()
-#plt.savefig("_07p2b_constant_velocity_model_errors.png")
-#plt.show()
 '''
 7.3 Mass-Spring Chain with N identical masses
 x = [p1(t) v1(t) ... pn(t) vn(t)]
