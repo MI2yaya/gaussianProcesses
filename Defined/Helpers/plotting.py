@@ -44,7 +44,7 @@ def plotMSE(xs_list, ys_list, MsX_list, MsY_list, r, q, save=False, name="smth.p
   
     plt.show()
 
-def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="smth.png",title="Kalman Filter Error Histograms"):
+def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="smth.png",title="Kalman Filter Error Histograms",t1="State",t2='Measurement'):
     fig = plt.figure(figsize=(15, 6))
     plt.axis("off")
     plt.title(f"{title}; time={time}, trials={kTrials}")
@@ -54,7 +54,7 @@ def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="
     ax4 = fig.add_subplot(224)
 
     ax1.hist(stateErrors, bins=30, alpha=0.7)
-    ax1.set_title("State Errors")
+    ax1.set_title(f"{t1} Errors")
     ax1.set_xlabel("MSE")
     ax1.set_ylabel("Frequency")
     q1= np.quantile(stateErrors, 0.25)
@@ -68,7 +68,7 @@ def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="
     ax1.legend()
     
     ax2.hist(measurementErrors, bins=30, alpha=0.7)
-    ax2.set_title("Measurement Errors")
+    ax2.set_title(f"{t2} Errors")
     ax2.set_xlabel("MSE")
     ax2.set_ylabel("Frequency")
     q1 = np.quantile(measurementErrors, 0.25)
@@ -81,15 +81,15 @@ def plotHist(stateErrors,measurementErrors, r, q, time,kTrials,save=False,name="
     ax2.axvline(q3, color='green', linestyle='--', label='Q3')
     ax2.legend()
     
-    ax3.plot(stateErrors, label='State Errors', color='blue')
-    ax3.set_title("State Errors Over Trials")
+    ax3.plot(stateErrors, label=f'{t1} Errors', color='blue')
+    ax3.set_title(f"{t1} Errors Over Trials")
     ax3.set_xlabel("Trial")
     ax3.set_ylabel("MSE")
     ax3.plot([r]*kTrials, label='Process Noise', color='red')
     ax3.legend()
 
-    ax4.plot(measurementErrors, label='Measurement Errors', color='orange')
-    ax4.set_title("Measurement Errors Over Trials")
+    ax4.plot(measurementErrors, label=f'{t2} Errors', color='orange')
+    ax4.set_title(f"{t2} Errors Over Trials")
     ax4.set_xlabel("Trial")
     ax4.set_ylabel("MSE")
     ax4.plot([q]*kTrials, label='Measurement Noise', color='green')

@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.Helpers.plotting import plotMSE, plotHist 
 from Defined.KFs.KF import KalmanFilter
+from Defined.KFs.UKF import UnscentedKalmanFilter
 from PIL import Image
 
 
@@ -194,13 +195,13 @@ if kTrials>0:
 7.3 Mass-Spring Chain with N identical masses
 x = [p1(t) v1(t) ... pn(t) vn(t)]
 '''
-kTrials=0
-time=100
+kTrials=50
+time=1000
 r=10
 q=10
 dt=.1
 N=3
-save=False
+save=True
 
 def massSpringChain(N=3, trials=10, dt=.1, r=1, q=1):
     x_initial = np.random.multivariate_normal(np.zeros(2 * N), np.eye(2 * N))
@@ -261,8 +262,11 @@ for trial in range(kTrials):
 
 
     for i in range(N):
-        stateErrors.append([mean_squared_error([x[i*2] for x in xs], [m[i*2] for m in MsX])])
-        measurementErrors.append([mean_squared_error([y[i] for y in ys], [m[i*2] for m in MsY])])
+        if trial==0:
+            stateErrors.append([])
+            measurementErrors.append([])
+        stateErrors[i].append(mean_squared_error([x[i*2] for x in xs], [m[i*2] for m in MsX]))
+        measurementErrors[i].append(mean_squared_error([y[i] for y in ys], [m[i*2] for m in MsY]))
 if kTrials>0:
     for i in range(N):
         fig = plt.figure(figsize=(15, 6))
@@ -275,9 +279,9 @@ if kTrials>0:
         trackerY = [[y[i] for y in ys] for ys in ys_list]
         trackerMsX = [[m[i] for m in Ms] for Ms in MsX_list]
         trackerMsY = [[m[i] for m in Ms] for Ms in MsY_list]
-        ax1.plot(np.median(trackerX, axis=0), label=f'True State {i+1}', color='blue')
-        ax1.plot(np.median(trackerY, axis=0), label=f'Observation {i+1}', color='orange')
-        ax1.plot(np.median(trackerMsY, axis=0), label=f'KF Estimate (Observation) {i+1}', color='green')
+        ax1.plot(np.median(trackerX, axis=0), label=f'True State #{i+1}', color='blue')
+        ax1.plot(np.median(trackerY, axis=0), label=f'Observation #{i+1}', color='orange')
+        ax1.plot(np.median(trackerMsY, axis=0), label=f'KF Estimate (Observation) #{i+1}', color='green')
         ax1.set_title("Median Graph")
         ax1.set_xlabel("Time Steps")
         ax1.legend()
@@ -314,6 +318,44 @@ if kTrials>0:
             plt.savefig(f"_07p3_N{i+1}_mass_spring_chain_median.png")
 
         plt.show()
+
+        plotHist(stateErrors[i],measurementErrors[i],r,q,time,kTrials,save,f"_07p3_N{i+1}_mass_spring_chain_errors.png",f"M.S.C N:{i+1}/{N}")
+    if save:
+        img1_path = f"_07p3_N1_mass_spring_chain_median.png"
+        img2_path = f"_07p3_N2_mass_spring_chain_median.png"
+        img3_path = f"_07p3_N3_mass_spring_chain_median.png"
+        img1 = Image.open(img1_path)
+        img2 = Image.open(img2_path)
+        img3 = Image.open(img3_path)
+        combined = Image.new('RGB', (img1.width, img1.height + img2.height + img3.height))
+        combined.paste(img1, (0, 0))
+        combined.paste(img2, (0, img1.height))
+        combined.paste(img3, (0, img1.height+img2.height))
+        combined.save(f"_07p3a_N3_mass_spring_chain_median_combined.png")
+        img1.close()
+        img2.close()
+        img3.close()
+        os.remove(img1_path)
+        os.remove(img2_path)
+        os.remove(img3_path)
+        
+        img1_path = f"_07p3_N1_mass_spring_chain_errors.png"
+        img2_path = f"_07p3_N2_mass_spring_chain_errors.png"
+        img3_path = f"_07p3_N3_mass_spring_chain_errors.png"
+        img1 = Image.open(img1_path)
+        img2 = Image.open(img2_path)
+        img3 = Image.open(img3_path)
+        combined = Image.new('RGB', (img1.width, img1.height + img2.height + img3.height))
+        combined.paste(img1, (0, 0))
+        combined.paste(img2, (0, img1.height))
+        combined.paste(img3, (0, img1.height+img2.height))
+        combined.save(f"_07p3b_N3_mass_spring_chain_error_combined.png")
+        img1.close()
+        img2.close()
+        img3.close()
+        os.remove(img1_path)
+        os.remove(img2_path)
+        os.remove(img3_path)
     
 '''
 7.4 Non-Linear System: Lorenz-63
@@ -369,17 +411,41 @@ def fourthOrderRungeKutta(time,h=.01,r=1):
         xs.append(z)
         ys.append(measurement(z))
     return xs,ys
+
+def fx(x):
+    def f(z):
+        z1_dot = 10*(z[1] - z[0])
+        z2_dot = z[0] * (28 - z[2]) - z[1]
+        z3_dot = z[0] * z[1] - (8/3) * z[2]
+        return np.array([z1_dot,z2_dot,z3_dot])
     
+    def RK4_step(z):
+        k1 = f(z)
+        k2 = f(z + (h/2)*k1)
+        k3 = f(z + (h/2)*k2)
+        k4 = f(z + h*k3)
+        return z + (h / 6) * (k1+2*k2+2*k3+k4)
+    
+
+    return RK4_step(x)
+def hx(x):
+     return np.array([.5*(x[0]**2 + x[1]**2) + .7*x[2]])
+ 
 np.random.seed(42)
 time=1000
-kTrials=1
+kTrials=0
 h=0.01
 r=.5
+save=True
 
 xs_list=[]
 ys_list=[]
-MsX_list=[]
-MsY_list=[]
+kf_MsY_list=[]
+ukf_MsY_list=[]
+kf_measurementErrors = []
+ukf_measurementErrors = []
+kf_errors=[]
+ukf_errors=[]
 for trial in range(kTrials):
     xs,ys = fourthOrderRungeKutta(time,h=h,r=r)
 
@@ -390,26 +456,71 @@ for trial in range(kTrials):
     H = np.array([[.5,.5,.7]])  # observation transition matrix.......
     R = r**2
     kf = KalmanFilter(x,P,F,H,Q,R)
+    ukf = UnscentedKalmanFilter(x,P,fx,hx,Q,R,n=3)
     
-    Ms, Covs = kf.batch_filter(ys)
+    kf_Ms, kf_Covs = kf.batch_filter(ys)
+    ukf_Ms, ukf_Covs = ukf.batch_filter(ys)
+    kf_MsY = [hx(Ms) for Ms in kf_Ms]
+    ukf_MsY = [hx(Ms) for Ms in ukf_Ms]
 
-    #MsX = [ele + np.random.normal(0, q) for ele in Ms]
-    MsY = [.5 * (ele[0]**2 + ele[1]**2) + .7*ele[2] + np.random.normal(0, r**2) for ele in Ms]
 
     xs_list.append(xs)
     ys_list.append(ys)
-    #MsX_list.append(MsX)
-    MsY_list.append(MsY)
+    kf_MsY_list.append(kf_MsY)
+    ukf_MsY_list.append(ukf_MsY)
+    
+    kf_errors.append(mean_squared_error(ys, kf_MsY))
+    ukf_errors.append(mean_squared_error(ys, ukf_MsY))
+    
     
 if kTrials>0:
     fig = plt.figure(figsize=(15, 6))
     plt.axis('off')
-    ax1 = fig.add_subplot(111)
-    for t in range(kTrials):
-        curr_x = [.5 * (x[0]**2 + x[1]**2) + .7*x[2] for x in xs_list[t]]
-        ax1.plot(ys_list[t],label=f'Observations #{t+1}')
-        ax1.plot(curr_x,label=f'Actual State #{t+1}')
-        ax1.plot(MsY_list[t],label=f'Kalman predictions #{t+1}')
-    ax1.legend()
+    plt.title(f"Lorenz63 KF vs UKF Trials:{kTrials} time:{time} r:{r}**2 h:{h} N:{3}")
+    ax1 = fig.add_subplot(221)
+    ax2 = fig.add_subplot(222)
+    ax3 = fig.add_subplot(223)
+    ax4 = fig.add_subplot(224)
+    conv_x = np.median([[hx(x) for x in xs] for xs in xs_list],axis=0)
+    conv_y = np.median(ys_list,axis=0)
+    ax1.set_title("Median KF")
+    ax2.set_title("Median UKF")
+    ax3.set_title("KF MSE")
+    ax4.set_title("UKF MSE")
     
+    ax1.plot(conv_y,label=f'Observations')
+    ax1.plot(conv_x,label=f'Actual State')
+    ax1.plot(np.median(kf_MsY_list,axis=0),label=f'KF predictions')
+    ax1.set_xlabel("Time")
+    
+    ax2.plot(conv_y,label=f'Observations')
+    ax2.plot(conv_x,label=f'Actual State')
+    ax2.plot(np.median(ukf_MsY_list,axis=0),label=f'UKF Prediction')
+    ax2.set_xlabel("Time")
+    for t in range(kTrials):
+        curr_y = ys_list[t]
+        curr_kf_msy = kf_MsY_list[t]
+        curr_ukf_msy = ukf_MsY_list[t]
+        
+        ax3.plot([mean_squared_error(curr_y[:i+1], curr_kf_msy[:i+1]) for i in range(len(ys))])
+        ax4.plot([mean_squared_error(curr_y[:i+1], curr_ukf_msy[:i+1]) for i in range(len(ys))])
+    
+    ax3.plot([.5**2]*len(ys),label='Min Error',linestyle='--')
+    ax3.set_ylabel("MSE")
+    ax3.set_xlabel("Time")
+    
+    ax4.plot([.5**2]*len(ys),label='Min Error',linestyle='--')
+    ax4.set_ylabel("MSE")
+    ax4.set_xlabel("Time")
+    
+    ax1.legend()
+    ax2.legend()
+    ax3.legend()
+    ax4.legend()
+    plt.tight_layout()
+    if save:
+        plt.savefig('_07p4a_Lorenz63.png')
     plt.show()
+    plotHist(kf_errors, ukf_errors, r**2, r**2, time, kTrials, save=save, title=f"KF vs UKF",t1='KF',t2="UKF",name='_07p4b_Lorenz63.png')
+
+        
