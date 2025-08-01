@@ -2,34 +2,42 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import mean_squared_error
 
-def plotMSE(xs, ys, MsX, MsY, r, q, save=False, name="smth.png",title="Kalman Filter MSE"):
+def plotMSE(xs_list, ys_list, MsX_list, MsY_list, r, q, save=False, name="smth.png",title="Kalman Filter MSE"):
     fig = plt.figure(figsize=(15, 6))
+    plt.title(f"{title}",y=1.05)
+    plt.axis("off")
     ax1 = fig.add_subplot(131)
     ax2 = fig.add_subplot(132)
     ax3 = fig.add_subplot(133)
-    ax1.set_title(title)
-    ax1.plot(xs, label='True States', color='blue')
-    ax1.plot(ys, label='Observations', color='orange')
-    ax1.plot(MsY, label='KF Estimate (Observation)', color='green')
+    ax1.plot(np.median(xs_list,axis=0), label='True States', color='blue')
+    ax1.plot(np.median(ys_list,axis=0), label='Observations', color='orange')
+    ax1.plot(np.median(MsY_list,axis=0), label='KF Estimate (Observation)', color='green')
     ax1.set_title("Median Graph")
     ax1.set_xlabel("Time Steps")
     ax1.legend()
+    
+    
     ax2.set_title("State MSE over Time")
-
-
-    ax2.plot([mean_squared_error(xs[:i+1], MsX[:i+1]) for i in range(xs.size)], label='MSE', color='blue')
-    ax2.plot([r]*len(xs), label=f'r={r:.1f}', color='red', linestyle='--')
+    ax2.plot([r]*len(xs_list[0]), label=f'r={r:.1f}', color='red', linestyle='--')
     ax2.set_xlabel("Time Steps")
     ax2.set_ylabel("MSE")
+    for k in range(len(MsX_list)):
+        xs = xs_list[k]
+        MsX = MsX_list[k]
+        ax2.plot([mean_squared_error(xs[:i+1], MsX[:i+1]) for i in range(len(xs))])
     ax2.legend()
+    
+    
     ax3.set_title("Measurement MSE over Time")
-
-
-    ax3.plot([mean_squared_error(ys[:i+1], MsY[:i+1]) for i in range(ys.size)], label='MSE', color='blue')
-    ax3.plot([q]*len(ys), label=f'q={q:.1f}', color='red', linestyle='--')
+    ax3.plot([q]*len(ys_list[0]),label=f'q={q:.1f}',color='red',linestyle='--')
     ax3.set_xlabel("Time Steps")
     ax3.set_ylabel("MSE")
+    for k in range(len(MsY_list)):
+        ys = ys_list[k]
+        MsY = MsY_list[k]
+        ax3.plot([mean_squared_error(ys[:i+1], MsY[:i+1]) for i in range(len(ys))])
     ax3.legend()
+    
     plt.tight_layout()
     if save:
         plt.savefig(name)

@@ -7,12 +7,15 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.Helpers.plotting import plotMSE, plotHist 
 from Defined.KFs.KF import KalmanFilter
+from PIL import Image
 
-kTrials=2
+
+kTrials=0
 time=1000
-#np.random.seed(42)
-r=1
-q=1
+np.random.seed(42)
+save=False
+r=5
+q=5
 '''
 7.1 Scalar random walk
 '''
@@ -37,7 +40,7 @@ MsX_list=[]
 MsY_list=[]
 for trial in range(kTrials):
     xs, ys = scalarRandomWalk(trials=time,r=r,q=q)
-    x = np.array([xs[0]])
+    x = np.array([ys[0]])
     P = np.array([[100]])  # Initial state covariance
     F = np.array([[1.]])  # State transition matrix
     Q = np.array([[q]])  # Process noise covariance
@@ -59,32 +62,45 @@ for trial in range(kTrials):
     MsX_list.append(MsX)
     MsY_list.append(MsY)
 
-
-plotMSE(np.median(xs_list,axis=0), np.median(ys_list,axis=0), np.median(MsX_list,axis=0),np.median(MsY_list,axis=0), r, q, save=False, name="_07p1a_median_scalar_random_walk.png")
-plotHist(stateErrors,measurementErrors, r, q, time, kTrials, save=False, name="_07p1b_scalar_random_walk_errors.png")
+if kTrials>0:
+    plotMSE(xs_list, ys_list, MsX_list, MsY_list, r, q, save=save, title=f"S.R.W, Trials:{kTrials},time:{time},r:{r},q{q}",name="_07p1a_median_scalar_random_walk.png")
+    plotHist(stateErrors,measurementErrors, r, q, time, kTrials, save=save, title=f"S.R.W, Trials:{kTrials},time:{time},r:{r},q{q}",name="_07p1b_scalar_random_walk_errors.png")
 
 '''
 7.2 Constant Velocity Model
 x = [px,vx,py,vy] #generalize into N targets
 '''
-kTrials=10
+np.random.seed(42)
+kTrials=0
 time=100
-r=10
-q=10
+r=5
+q=5
 dt=1
+trackers=2
+save=False
 
-def constantVelocityModel(trials=10, dt=1, r=1, q=1):
-    x_initial = np.random.multivariate_normal(np.zeros(4), np.eye(4))
+def constantVelocityModel(trials=10, dt=1, r=1, q=1,trackers=1):
+    x_initial = np.random.multivariate_normal(np.zeros(4*trackers), np.eye(4*trackers))
     xs = [x_initial]
-    ys = [np.array([x_initial[0], x_initial[2]])]
+    ys = [np.array([x_initial[i] for i in range(0, 4*trackers, 2)])]
     x = x_initial
     for _ in range(trials):
-        w = np.random.multivariate_normal(np.zeros(4), q * np.eye(4))
-        A = np.array([[1, dt, 0, 0], [0, 1, 0, 0], [0, 0, 1, dt], [0, 0, 0, 1]])
+        w = np.random.multivariate_normal(np.zeros(4*trackers), q * np.eye(4*trackers))
+        A = np.eye(4*trackers)
+        for i in range(0,trackers*4,2):
+            A[i][i+1]=dt
+        
+        #print(f'X:{x}\nA:{A}\nw:{w}')
+        
         x = A @ x + w
         xs.append(x)
-        y = np.random.multivariate_normal(np.zeros(2), r * np.eye(2))
-        H = np.array([[1, 0, 0, 0], [0, 0, 1, 0]])
+        y = np.random.multivariate_normal(np.zeros(2*trackers), r * np.eye(2*trackers))
+        
+        H= np.zeros((2*trackers, 4*trackers))
+        for i in range(0,trackers*2,1):
+            H[i][2*i]=1
+        #print(f'Y:{y}\nH:{H}')
+        
         y_observed = H @ x + y
         ys.append(y_observed)
     return xs, ys
@@ -95,14 +111,23 @@ measurementErrorsY = []
 stateErrorsY = []
 xs_list = []
 ys_list = []
+MsX_list = []
+MsY_list = []
 for trial in range(kTrials):
-    xs, ys = constantVelocityModel(trials=time,dt=dt,r=r,q=q)
-    x = np.zeros(4)  
-    P = np.eye(4) * 100
-    F = np.array([[1, dt, 0, 0], [0, 1, 0, 0], [0, 0, 1, dt], [0, 0, 0, 1]])
-    H = np.array([[1, 0, 0, 0], [0, 0, 1, 0]])
-    R = np.eye(2) * r
-    Q = np.eye(4) * q 
+    xs, ys = constantVelocityModel(trials=time,dt=dt,r=r,q=q,trackers=trackers)
+    x = np.zeros(4*trackers)  
+    P = np.eye(4*trackers) * 100
+    
+    F = np.eye(4*trackers)
+    for i in range(0, trackers*4, 2):
+        F[i][i+1] = dt
+    
+    H = np.zeros((2*trackers, 4*trackers))
+    for i in range(0, trackers*2, 1):
+        H[i][2*i] = 1
+    
+    R = np.eye(2*trackers) * r
+    Q = np.eye(4*trackers) * q 
     kf = KalmanFilter(x, P, F, H, Q, R)
 
     Ms, Covs = kf.batch_filter(ys)
@@ -116,12 +141,53 @@ for trial in range(kTrials):
     measurementErrorsY.append(mean_squared_error([y[1] for y in ys], [m[2] for m in MsY]))
     xs_list.append(xs)
     ys_list.append(ys)
+    MsX_list.append(MsX)
+    MsY_list.append(MsY)
 
-
-plotMSE(np.median(xs_list,axis=0), np.median(ys_list,axis=0), [m[0] for m in MsX], [m[0] for m in MsY], r=r, q=q, save=False, name="_07p2a_constant_velocity_model.png",title="Constant Velocity Model X")
-plotMSE(np.median(xs_list,axis=2), np.median(ys_list,axis=1), [m[2] for m in MsX], [m[2] for m in MsY], r=r, q=q, save=False, name="_07p2b_constant_velocity_model_y.png",title="Constant Velocity Model Y")
-plotHist(stateErrorsX, measurementErrorsX, r, q, time, kTrials, save=False, name="_07p2c_constant_velocity_model_x_errors.png",title="Constant Velocity Model X Errors")
-plotHist(stateErrorsY, measurementErrorsY, r, q, time, kTrials, save=False, name="_07p2d_constant_velocity_model_y_errors.png",title="Constant Velocity Model Y Errors")
+#xs_list [trial][time_step][state]
+if kTrials>0:
+    for tracker in range(trackers):
+        #X-pos plotting for tracker
+        trackerX = [[x[0*tracker] for x in xs] for xs in xs_list]
+        trackerY = [[y[0*tracker] for y in ys] for ys in ys_list]
+        trackerMsX = [[m[0*tracker] for m in Ms] for Ms in MsX_list]
+        trackerMsY = [[m[0*tracker] for m in Ms] for Ms in MsY_list]
+        plotMSE(trackerX, trackerY, trackerMsX, trackerMsY, r=r, q=q, save=save, name=f"_07p2a_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M-X Tracker #{tracker+1}/{trackers} Trials:{kTrials},time:{time},r:{r},q{q}")
+        
+        #Y-pos plotting for tracker
+        trackerX = [[x[2*tracker] for x in xs] for xs in xs_list]
+        trackerY = [[y[1*tracker] for y in ys] for ys in ys_list]
+        trackerMsX = [[m[2*tracker] for m in Ms] for Ms in MsX_list]
+        trackerMsY = [[m[2*tracker] for m in Ms] for Ms in MsY_list]
+        plotMSE(trackerX, trackerY,trackerMsX, trackerMsY, r=r, q=q, save=save, name=f"_07p2b_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M-Y Tracker #{tracker+1}/{trackers} Trials:{kTrials},time:{time},r:{r},q{q}")
+        
+        
+        plotHist(stateErrorsX, measurementErrorsX, r, q, time, kTrials, save=save, name=f"_07p2c_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M X Errors Tracker #{tracker+1}/{trackers}")
+        plotHist(stateErrorsY, measurementErrorsY, r, q, time, kTrials, save=save, name=f"_07p2d_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M Y Errors Tracker #{tracker+1}/{trackers}")
+        if save:
+            img1_path = f"_07p2a_tracker{tracker}_constant_velocity_model.png"
+            img2_path = f"_07p2b_tracker{tracker}_constant_velocity_model.png"
+            img3_path = f"_07p2c_tracker{tracker}_constant_velocity_model.png"
+            img4_path = f"_07p2d_tracker{tracker}_constant_velocity_model.png"
+            img1 = Image.open(img1_path)
+            img2 = Image.open(img2_path)
+            img3 = Image.open(img3_path)
+            img4 = Image.open(img4_path)
+            combined = Image.new('RGB', (img1.width + img2.width, img1.height + img3.height))
+            combined.paste(img1, (0, 0))
+            combined.paste(img2, (img1.width, 0))
+            combined.paste(img3, (0, img1.height))
+            combined.paste(img4, (img1.width, img1.height))
+            combined.save(f"_07p2_tracker{tracker}_constant_velocity_model_combined.png")
+            img1.close()
+            img2.close()
+            img3.close()
+            img4.close()
+            os.remove(img1_path)
+            os.remove(img2_path)
+            os.remove(img3_path)
+            os.remove(img4_path)
+        
 
 
 '''
@@ -134,6 +200,7 @@ r=10
 q=10
 dt=.1
 N=3
+save=False
 
 def massSpringChain(N=3, trials=10, dt=.1, r=1, q=1):
     x_initial = np.random.multivariate_normal(np.zeros(2 * N), np.eye(2 * N))
@@ -157,8 +224,13 @@ def massSpringChain(N=3, trials=10, dt=.1, r=1, q=1):
         y_observed = H @ x + y
         ys.append(y_observed)
     return xs, ys
-stateErrors = [] 
+stateErrors = []
 measurementErrors = []
+xs_list=[]
+ys_list=[]
+MsX_list=[]
+MsY_list=[]
+
 for trial in range(kTrials):
     xs, ys = massSpringChain(N=N,trials=time,q=q,r=r,dt=dt)
     x = np.zeros(2 * N)
@@ -182,47 +254,64 @@ for trial in range(kTrials):
     MsX = [ele + np.random.normal(0, q) for ele in Ms]
     MsY = [ele + np.random.normal(0, r) for ele in Ms]
 
+    xs_list.append(xs)
+    ys_list.append(ys)
+    MsX_list.append(MsX)
+    MsY_list.append(MsY)
 
 
     for i in range(N):
         stateErrors.append([mean_squared_error([x[i*2] for x in xs], [m[i*2] for m in MsX])])
         measurementErrors.append([mean_squared_error([y[i] for y in ys], [m[i*2] for m in MsY])])
-    if trial==0:
-        for i in range(N):
-            fig = plt.figure(figsize=(10, 6))
-            ax1 = fig.add_subplot(31+N*100+1*(i+1))
-            ax2 = fig.add_subplot(31+N*100+2*(i+1))
-            ax3 = fig.add_subplot(31+N*100+3*(i+1))
-            ax1.set_title(f"{i+1}th Mass-Spring Chain")
-            ax1.plot(xs[2*i], label='True States', color='blue')
-            ax1.plot(ys[i], label='Observations', color='orange')
-            ax1.plot(MsY[2*i], label='KF Estimate (Observation)', color='green')
-            ax1.set_title("State vs Observation vs Estimate")
-            ax1.set_xlabel("Time Steps")
-            ax1.legend()
-            ax2.set_title("State MSE over Time")
-
-            ax2.plot([mean_squared_error(xs[:j+1][2*i], MsX[:j+1][2*i]) for j in range(len(Ms))], label='MSE', color='blue')
-            ax2.plot([r]*len(xs), label=f'r={r:.1f}', color='red', linestyle='--')
-            ax2.set_xlabel("Time Steps")
-            ax2.set_ylabel("MSE")
-            ax2.legend()
-            ax3.set_title("Measurement MSE over Time")
-
-            for K in range(10):
-                print(f"YS:{[y[i] for y in ys[:K]]}")
-                print(f"MsY:{[my[i] for my in MsY[:K]]}")
+if kTrials>0:
+    for i in range(N):
+        fig = plt.figure(figsize=(15, 6))
+        plt.title(f"M.S.C N:{i+1}/{N} Trials: {kTrials} time: {time} dt:{dt} r:{r} q:{q}",y=1.05)
+        plt.axis("off")
+        ax1 = fig.add_subplot(131)
+        ax2 = fig.add_subplot(132)
+        ax3 = fig.add_subplot(133)
+        trackerX = [[x[i*2] for x in xs] for xs in xs_list]
+        trackerY = [[y[i] for y in ys] for ys in ys_list]
+        trackerMsX = [[m[i] for m in Ms] for Ms in MsX_list]
+        trackerMsY = [[m[i] for m in Ms] for Ms in MsY_list]
+        ax1.plot(np.median(trackerX, axis=0), label=f'True State {i+1}', color='blue')
+        ax1.plot(np.median(trackerY, axis=0), label=f'Observation {i+1}', color='orange')
+        ax1.plot(np.median(trackerMsY, axis=0), label=f'KF Estimate (Observation) {i+1}', color='green')
+        ax1.set_title("Median Graph")
+        ax1.set_xlabel("Time Steps")
+        ax1.legend()
 
 
-            ax3.plot([mean_squared_error(ys[:j+1][i], MsY[:j+1][2*i]) for j in range(len(Ms))], label='MSE', color='blue')
-            ax3.plot([q]*len(ys), label=f'q={q:.1f}', color='red', linestyle='--')
-            ax3.set_xlabel("Time Steps")
-            ax3.set_ylabel("MSE")
-            ax3.legend()
+        ax2.set_title("State MSE over Time")
+        ax2.plot([r]*len(xs_list[0]), label=f'r={r:.1f}', color='red', linestyle='--')
+        ax2.set_xlabel("Time Steps")
+        ax2.set_ylabel("MSE")
+        
+
+        X_List = [[x[i*2] for x in xs] for xs in xs_list]
+        MsX_List = [[ms[i*2] for ms in MsX] for MsX in MsX_list]
+        for k in range(kTrials):
+            currX = X_List[k]
+            currMsX = MsX_List[k]
+            ax2.plot([mean_squared_error(currX[:i+1], currMsX[:i+1]) for i in range(len(currX))])
+        ax2.legend()
+
+        ax3.set_title("Measurement MSE over Time")
+        ax3.plot([q]*len(ys_list[0]),label=f'q={q:.1f}',color='red',linestyle='--')
+        ax3.set_xlabel("Time Steps")
+        ax3.set_ylabel("MSE")
+        Y_List = [[y[i] for y in ys] for ys in ys_list]
+        MsY_List = [[ms[i] for ms in MsY] for MsY in MsY_list]
+        for k in range(kTrials):
+            currY = Y_List[k]
+            currMsY = MsY_List[k]
+            ax3.plot([mean_squared_error(currY[:i+1], currMsY[:i+1]) for i in range(len(ys))])
+        ax3.legend()
 
         plt.tight_layout()
+        if save:
+            plt.savefig(f"_07p3_N{i+1}_mass_spring_chain_median.png")
+
         plt.show()
-
-
-for i in range(N):
-    plotHist([se[i][0] for se in stateErrors], [me[i][0] for me in measurementErrors], r, q, time, kTrials, save=False, name=f"_07p3b_mass_spring_chain_{i}_errors.png", title=f"Mass-Spring Chain {i} Errors")
+    
