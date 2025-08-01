@@ -194,7 +194,7 @@ if kTrials>0:
 7.3 Mass-Spring Chain with N identical masses
 x = [p1(t) v1(t) ... pn(t) vn(t)]
 '''
-kTrials=10
+kTrials=0
 time=100
 r=10
 q=10
@@ -315,3 +315,101 @@ if kTrials>0:
 
         plt.show()
     
+'''
+7.4 Non-Linear System: Lorenz-63
+zt = (z1,z2,z3)^T
+z1' = 10(z2-z1)
+z2' = z1(28-z3)-z2
+z3' = z1z2 -(8/3)z3
+
+f(z) = (z1',z2',z3')
+
+h=0.01
+k1=f(z_{t-1})
+k2=f(z_{t-1}+(h/2)k1)
+k3=f(z_{t-1}+(h/2)k2)
+k4=f(z_{t-1}+(h/2)k3)
+
+z_t = RK4(z_{t-1},h)+ N(0,0.02^2(I_3))
+= z_{t-1}+(h/6)(k1+2k2+2k3+k4) + N(0,0.02^2(I_3))
+
+y_t = .5(z1^2+z2^2) +.7z3 + N(0,r)
+'''
+
+
+def fourthOrderRungeKutta(time,h=.01,r=1):
+    def f(z):
+        z1_dot = 10*(z[1] - z[0])
+        z2_dot = z[0] * (28 - z[2]) - z[1]
+        z3_dot = z[0] * z[1] - (8/3) * z[2]
+        return np.array([z1_dot,z2_dot,z3_dot])
+    
+    def RK4_step(z):
+        k1 = f(z)
+        k2 = f(z + (h/2)*k1)
+        k3 = f(z + (h/2)*k2)
+        k4 = f(z + h*k3)
+        return z + (h / 6) * (k1+2*k2+2*k3+k4)
+    
+    def nextUpdate(z):
+        z = RK4_step(z)
+        noise = np.random.multivariate_normal(mean=np.zeros(3), cov=(0.02**2) * np.eye(3))
+        return z + noise
+    
+    def measurement(z):
+        y = .5 * (z[0]**2 + z[1]**2) + .7*z[2]
+        noise = np.random.normal(0,r**2)
+        return y + noise
+    
+    z = np.zeros(3)
+    xs=[]
+    ys=[]
+    for _ in range(time):
+        z = nextUpdate(z)
+        xs.append(z)
+        ys.append(measurement(z))
+    return xs,ys
+    
+np.random.seed(42)
+time=1000
+kTrials=1
+h=0.01
+r=.5
+
+xs_list=[]
+ys_list=[]
+MsX_list=[]
+MsY_list=[]
+for trial in range(kTrials):
+    xs,ys = fourthOrderRungeKutta(time,h=h,r=r)
+
+    x = np.zeros(3)
+    P = np.eye(3) * 10
+    F = np.eye(3)  # State transition matrix......
+    Q = (0.02**2)*np.eye(3)
+    H = np.array([[.5,.5,.7]])  # observation transition matrix.......
+    R = r**2
+    kf = KalmanFilter(x,P,F,H,Q,R)
+    
+    Ms, Covs = kf.batch_filter(ys)
+
+    #MsX = [ele + np.random.normal(0, q) for ele in Ms]
+    MsY = [.5 * (ele[0]**2 + ele[1]**2) + .7*ele[2] + np.random.normal(0, r**2) for ele in Ms]
+
+    xs_list.append(xs)
+    ys_list.append(ys)
+    #MsX_list.append(MsX)
+    MsY_list.append(MsY)
+    
+if kTrials>0:
+    fig = plt.figure(figsize=(15, 6))
+    plt.axis('off')
+    ax1 = fig.add_subplot(111)
+    for t in range(kTrials):
+        curr_x = [.5 * (x[0]**2 + x[1]**2) + .7*x[2] for x in xs_list[t]]
+        ax1.plot(ys_list[t],label=f'Observations #{t+1}')
+        ax1.plot(curr_x,label=f'Actual State #{t+1}')
+        ax1.plot(MsY_list[t],label=f'Kalman predictions #{t+1}')
+    ax1.legend()
+    
+    plt.show()
