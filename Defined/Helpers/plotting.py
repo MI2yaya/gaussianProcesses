@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import mean_squared_error
 
-def plotMSE(xs_list, ys_list, MsX_list, MsY_list, r, q, save=False, name="smth.png",title="Kalman Filter MSE"):
+def plotMSE(xs_list, ys_list, MsX_list, MsY_list,r, q, cov_ex=[],save=False, name="smth.png",title="Kalman Filter MSE"):
     fig = plt.figure(figsize=(15, 6))
     plt.title(f"{title}",y=1.05)
     plt.axis("off")
@@ -18,18 +18,20 @@ def plotMSE(xs_list, ys_list, MsX_list, MsY_list, r, q, save=False, name="smth.p
     
     
     ax2.set_title("State MSE over Time")
-    ax2.plot([r]*len(xs_list[0]), label=f'r={r:.1f}', color='red', linestyle='--')
+    ax2.plot([q**2]*len(xs_list[0]), label=f'q_var={q**2:.1f}', color='red', linestyle='--')
     ax2.set_xlabel("Time Steps")
     ax2.set_ylabel("MSE")
     for k in range(len(MsX_list)):
         xs = xs_list[k]
         MsX = MsX_list[k]
         ax2.plot([mean_squared_error(xs[:i+1], MsX[:i+1]) for i in range(len(xs))])
+    if len(cov_ex)>0:
+        ax2.plot(cov_ex,color='blue',label='Cov',linestyle='--')
     ax2.legend()
     
     
     ax3.set_title("Measurement MSE over Time")
-    ax3.plot([q]*len(ys_list[0]),label=f'q={q:.1f}',color='red',linestyle='--')
+    ax3.plot([r**2]*len(ys_list[0]),label=f'r_var={r**2:.1f}',color='red',linestyle='--')
     ax3.set_xlabel("Time Steps")
     ax3.set_ylabel("MSE")
     for k in range(len(MsY_list)):

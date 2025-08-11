@@ -36,6 +36,17 @@ class KalmanFilter:
             covars.append(self.P)
         return estimates,covars
     
-    def rts_smoother(self, measurements, covariances):
+    def rts_smoother(self, Xs, Ps):
+        n, dim_x = Xs.shape
+        
+        K = np.zeros((n,dim_x, dim_x))
+        x, P = Xs.copy(), Ps.copy()
 
-        return(measurements, covariances)  # Placeholder for RTS smoother implementation
+        for k in range(n-2,-1,-1):
+            P_pred = np.dot(self.F, P[k]).dot(self.F.T) + self.Q
+
+            K[k]  = np.dot(P[k], self.F.T).dot(np.linalg.inv(P_pred))
+            x[k] += np.dot(K[k], x[k+1] - np.dot(self.F, x[k]))
+            P[k] += np.dot(K[k], P[k+1] - P_pred).dot(K[k].T)
+        return (x, P)
+            
