@@ -1,6 +1,9 @@
 import torch
 from denoising_diffusion_pytorch import Unet, GaussianDiffusion
 
+#https://www.assemblyai.com/blog/diffusion-models-for-machine-learning-introduction
+
+
 model = Unet(
     dim = 64,
     dim_mults= (1,2,4,8)
