@@ -13,12 +13,13 @@ def cosine_beta_schedule(timesteps: int, s: float = 0.008):
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, model, timesteps=1000, schedule="cosine",
-                 beta_start=1e-4, beta_end=2e-2, is_image_model=True):
+                 beta_start=1e-4, beta_end=2e-2, is_image_model=True,target='noise'):
         super().__init__()
         
         self.model = model
         self.timesteps = timesteps
         self.is_image_model = is_image_model
+        self.target = target #'noise or x0
 
         if schedule == "cosine":
             betas = cosine_beta_schedule(timesteps)
@@ -58,19 +59,27 @@ class GaussianDiffusion(nn.Module):
         s1, s2 = self._reshape(x0, t)
         return s1 * x0 + s2 * noise
 
-    def forward(self, x):
+    def forward(self, x, x0=None):
         #calculates loss, used during training
         b = x.size(0)
         device = x.device 
         t = torch.randint(0, self.timesteps, (b,), device=device, dtype=torch.long)
 
-        noise = torch.randn_like(x)
+        noise = torch.randn_like(x) #generate noise
+        x_noisy = self.q_sample(x, t, noise) #add noise to input
+        pred_x = self.model(x_noisy, t) #predict noise or x0
 
-        x_noisy = self.q_sample(x, t, noise)
-        
-        pred_noise = self.model(x_noisy, t)
+        if self.target == 'noise':
+            loss = F.mse_loss(pred_x, noise) #compare predicted noise to true noise, learns to denoise
 
-        loss = F.mse_loss(pred_noise, noise)
+        elif self.target == 'x0':
+            if x0 is None:
+                raise ValueError("x0 must be provided when targets='x0'")
+            loss = F.mse_loss(pred_x, x0) #compare predicted x0 to true x0, learns true state
+
+        else:
+            raise ValueError(f"Unknown target type: {self.target}")
+
         return loss
 
     @torch.no_grad()

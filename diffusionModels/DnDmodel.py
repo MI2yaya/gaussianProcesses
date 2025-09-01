@@ -36,17 +36,52 @@ diffusion_timesteps=100
 batch_size=32
 dataSamples=100
 min_dim=32
+target='x0' #noise or x0
 
 def fuse(xt,yt):
     return np.concatenate([xt,yt],axis=1)
 
 def trainingData(dataSamples=10, dataTime=100, dt=1, r=1, q=1, trackers=1):
     data = []
-    for _ in range(dataSamples):
-        x,y = constantVelocityModel(trials=dataTime,dt=dt,r=r,q=q,trackers=trackers)
-        fused = fuse(x,y)
-        data.append(fused)
-    return np.array(data)
+    targets = []
+    for sample in range(dataSamples):
+        xs, ys = constantVelocityModel(trials=dataTime, dt=dt, r=r, q=q, trackers=trackers)
+        kf = initializeKF()
+        x_priors=[]
+        y_observs=[]
+        x_trues=[]
+        for t in range(dataTime+1):
+            x_prior, _ = kf.predict()        # KF prediction before update
+            y_obs = ys[t]
+            x_priors.append(x_prior)
+            y_observs.append(y_obs)
+            
+            x_true = xs[t]                   # Target for denoising, but it doesnt really work because the input and output dims are different :(
+            x_trues.append(x_true)
+            
+            _, _ = kf.update(y_obs)          # Update KF
+        fused_pred = fuse(x_priors, y_observs)
+        fused_true = fuse(x_trues, y_observs)
+        data.append(fused_pred)
+        targets.append(fused_true)
+    return np.array(data), np.array(targets)
+
+def initializeKF():
+    x = np.zeros(4*trackers)  
+    P = np.eye(4*trackers)
+    
+    F = np.eye(4*trackers)
+    for i in range(0, trackers*4, 2):
+        F[i][i+1] = dt
+    
+    H = np.zeros((2*trackers, 4*trackers))
+    for i in range(0, trackers*2, 1):
+        H[i][2*i] = 1
+    
+    R = np.eye(2*trackers) * r_std**2
+    Q = np.eye(4*trackers) * q_std**2 
+    kf = KalmanFilter(x, P, F, H, Q, R)
+    return kf
 
 def constantVelocityModel(trials=10, dt=1, r=1, q=1,trackers=1):
     x_initial = np.random.multivariate_normal(np.zeros(4*trackers), np.eye(4*trackers))
@@ -84,25 +119,15 @@ MsY_list = []
 for trial in range(kTrials):
     #1 generate data, KF
     xs, ys = constantVelocityModel(trials=dataTime,dt=dt,r=r_std,q=q_std,trackers=trackers)
-    x = np.zeros(4*trackers)  
-    P = np.eye(4*trackers)
-    
-    F = np.eye(4*trackers)
-    for i in range(0, trackers*4, 2):
-        F[i][i+1] = dt
-    
-    H = np.zeros((2*trackers, 4*trackers))
-    for i in range(0, trackers*2, 1):
-        H[i][2*i] = 1
-    
-    R = np.eye(2*trackers) * r_std**2
-    Q = np.eye(4*trackers) * q_std**2 
-    kf = KalmanFilter(x, P, F, H, Q, R)
+    kf = initializeKF()
 
     #2 Setup DDPM    
-    data_array = trainingData(dataSamples=dataSamples, dataTime=dataTime, dt=dt, r=r_std, q=q_std, trackers=trackers)  # shape (dataSamples, time+1, 6)
+    data_array, targets = trainingData(dataSamples=dataSamples, dataTime=dataTime, dt=dt, r=r_std, q=q_std, trackers=trackers)  # shape (dataSamples, time+1, 6)
     data_array = data_array.reshape(-1, data_array.shape[-1])  # (dataSamples*(time+1), 6)
-    dataset = TensorDataset(torch.tensor(data_array, dtype=torch.float32))
+    dataset = TensorDataset(
+        torch.tensor(data_array, dtype=torch.float32),  # noisy/fused input
+        torch.tensor(targets.reshape(-1, targets.shape[-1]), dtype=torch.float32)  # true state fused with obs
+    )
 
     model = MLP(
         input_dim=data_array.shape[-1],
@@ -114,7 +139,8 @@ for trial in range(kTrials):
         model, 
         timesteps=diffusion_timesteps,
         schedule="cosine",
-        is_image_model=False
+        is_image_model=False,
+        target=target
     ).to(device)
     trainer = DiffusionTrainer(
         model, 
@@ -126,7 +152,8 @@ for trial in range(kTrials):
         ema_decay=0.995,
         patience=10,
         ckpt_path=os.path.join('diffusionModels\data\CVM',"best_ema.pt"),
-        is_image_model=False
+        is_image_model=False,
+        target=target
     )
     
     trainer.train(steps=10000,log_every=500)
@@ -147,7 +174,8 @@ for trial in range(kTrials):
         denoised_flat = denoised_rescaled.view(-1).cpu().numpy()
 
         # Extract measurement part
-        denoised_measurement = denoised_flat[-y_obs.shape[0]:]
+        denoised_state = denoised_flat[:x_prior.shape[0]] #mlp predicts true state+obs
+        denoised_measurement = kf.H @ denoised_state #turn predicted state into obs
 
         # Update KF with denoised measurement
         _, _ = kf.update(denoised_measurement)
@@ -160,7 +188,7 @@ for trial in range(kTrials):
         
     Ms = filtered_states
     MsX = [ele for ele in Ms]
-    MsY = [H @ ele for ele in Ms]
+    MsY = [kf.H @ ele for ele in Ms]
 
     print(f"Msx: {MsX}")
     print(f"Msy: {MsY}")

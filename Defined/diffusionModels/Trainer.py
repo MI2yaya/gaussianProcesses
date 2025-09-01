@@ -26,11 +26,13 @@ class EMA:
                 
 class DiffusionTrainer:
     def __init__(self, model, diffusion, dataset, batch_size=64, lr=2e-4, device=None,
-                 ema_decay=0.995, val_ratio=0.05, num_workers=0, pin_memory=False, clip_grad=1.0,patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True):
+                 ema_decay=0.995, val_ratio=0.05, num_workers=0, pin_memory=False, clip_grad=1.0,
+                 patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,target='noise'):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.diffusion = diffusion.to(self.device)
         self.is_image_model = is_image_model
+        self.target=target #noise or x0
 
         n = len(dataset)
         n_val = max(1, int(n * val_ratio))
@@ -50,15 +52,25 @@ class DiffusionTrainer:
         self.ckpt_path=ckpt_path
         self.predefined=predefined
 
+    def compute_loss(self, x, y=None):
+        if self.target == 'x0':
+            return self.diffusion(x, x0=y)
+        elif self.target == 'noise':
+            return self.diffusion(x)
+        else:
+            raise ValueError(f"Unknown target type: {self.target}")
+
     @torch.no_grad()
     def _evaluate(self):
         self.model.eval()
         total, count = 0.0, 0
-        for (x, *_) in self.val_loader:
+        for (x,y, *_) in self.val_loader:
             x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
             
-            total += self.diffusion(x).item()
+            total += self.compute_loss(x, y).item()
             count += 1
+
         self.model.train()
         return total / max(1, count)
 
@@ -70,10 +82,11 @@ class DiffusionTrainer:
         pbar = tqdm(total=steps, dynamic_ncols=True)
         patience = self.patience
         while step < steps:
-            for (x, *_) in self.train_loader:
+            for (x,y, *_) in self.train_loader:
                 x = x.to(self.device, non_blocking=True)
-
-                loss = self.diffusion(x)
+                y = y.to(self.device, non_blocking=True)
+                
+                loss = self.compute_loss(x, y)
                 self.opt.zero_grad(set_to_none=True)
                 loss.backward()
                 if self.clip_grad is not None:

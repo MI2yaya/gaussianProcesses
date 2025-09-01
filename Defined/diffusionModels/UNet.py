@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from sinusoidalEmbedding import sinusoidal_embedding
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Defined.diffusionModels.sinusoidalEmbedding import SinusoidalEmbeddingModule
 
 
 class ResidualBlock(nn.Module): #Stabilzes training, allows for deeper networks
@@ -39,6 +42,7 @@ class UNet(nn.Module):
 
         #Timestep embedding MLP
         self.time_mlp = nn.Sequential(
+            SinusoidalEmbeddingModule(time_dim),
             nn.Linear(time_dim, time_dim * 4),
             nn.ReLU(),
             nn.Linear(time_dim * 4, time_dim)
@@ -68,8 +72,7 @@ class UNet(nn.Module):
         self.out = nn.Conv2d(prev_dim, out_channels, 1)
     
     def forward(self, x, t):
-        t_emb = sinusoidal_embedding(t, self.time_mlp[0].in_features)
-        t_emb = self.time_mlp(t_emb)
+        t_emb = self.time_mlp(t)
         
         enc_feats = []
 
