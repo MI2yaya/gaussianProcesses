@@ -1,4 +1,4 @@
-from denoising_diffusion_pytorch import Unet, GaussianDiffusion, Trainer
+from denoising_diffusion_pytorch import Unet, GaussianDiffusion
 import torch
 from torch.utils.data import TensorDataset
 import matplotlib.pyplot as plt
@@ -8,8 +8,10 @@ from data.MNIST.mnistDatasetLoader import MnistDataloader
 import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Defined.diffusionModels.diffusionTrainer import SimpleTrainer
+from Defined.diffusionModels.Trainer import DiffusionTrainer
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 
 mnist_dataloader = MnistDataloader()
 (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
@@ -26,14 +28,25 @@ model = Unet(
     dim=64, 
     dim_mults=(1, 2, 4),
     channels=1
-)
+).to(device)
 
-diffusion = GaussianDiffusion(model, image_size=28, timesteps=10)
+diffusion = GaussianDiffusion(model, image_size=28, timesteps=10).to(device)
 
 # Trainer
-trainer = SimpleTrainer(model, diffusion, dataset, batch_size=2, lr=2e-5)
+trainer = DiffusionTrainer(
+    model, 
+    diffusion, 
+    dataset, 
+    batch_size=32, 
+    lr=1e-4,
+    device=device,
+    ema_decay=0.995,
+    patience=10,
+    ckpt_path=os.path.join('diffusionModels\data\MNIST',"best_ema.pt"),
+    predefined=True
+)
 
-trainer.train(steps=1000)
+trainer.train(steps=1000, log_every=100)
 
 sampled_images = trainer.sample(num_samples=16)
 
