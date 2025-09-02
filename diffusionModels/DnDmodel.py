@@ -5,7 +5,7 @@ import torch
 from copy import deepcopy
 import numpy as np
 from sklearn.metrics import mean_squared_error
-
+import matplotlib.pyplot as plt
 import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -56,7 +56,7 @@ def trainingData(dataSamples=10, dataTime=100, dt=1, r=1, q=1, trackers=1):
             x_priors.append(x_prior)
             y_observs.append(y_obs)
             
-            x_true = xs[t]                   # Target for denoising, but it doesnt really work because the input and output dims are different :(
+            x_true = xs[t]                   # Target for denoising, true state
             x_trues.append(x_true)
             
             _, _ = kf.update(y_obs)          # Update KF
@@ -114,6 +114,7 @@ xs_list = []
 ys_list = []
 MsX_list = []
 MsY_list = []
+adjustedMsX_list = []
 
 
 for trial in range(kTrials):
@@ -156,10 +157,11 @@ for trial in range(kTrials):
         target=target
     )
     
-    trainer.train(steps=10000,log_every=500)
+    trainer.train(steps=100000,log_every=500)
     
-    filtered_states = []
-    filtered_covs = []
+    kf_states = []
+    kf_covs = []
+    filtered_states= []
     start_time = time.time()
     for t, y_obs in enumerate(ys):
         x_prior, _ = kf.predict()
@@ -175,27 +177,28 @@ for trial in range(kTrials):
 
         # Extract measurement part
         denoised_state = denoised_flat[:x_prior.shape[0]] #mlp predicts true state+obs
-        denoised_measurement = kf.H @ denoised_state #turn predicted state into obs
 
         # Update KF with denoised measurement
-        _, _ = kf.update(denoised_measurement)
+        post_x, post_cov = kf.update(y_obs)
 
-        filtered_states.append(kf.x.copy())
-        filtered_covs.append(kf.P.copy())
+        kf_states.append(post_x)
+        kf_covs.append(post_cov)
+        filtered_states.append(denoised_state)
+        
         if (t+1)%10==0:
             print(f"Trial {trial+1}/{kTrials}, Time step {t+1}/{len(ys)} processed in {time.time() - start_time:.4f} seconds")
             start_time = time.time()
         
-    Ms = filtered_states
+    Ms = kf_states
     MsX = [ele for ele in Ms]
     MsY = [kf.H @ ele for ele in Ms]
 
-    print(f"Msx: {MsX}")
-    print(f"Msy: {MsY}")
-    print(f"x: {xs}")
-    print(f"y: {ys}")
-    print("NaNs in xs:", np.isnan(xs).sum())
-    print("NaNs in MsX:", np.isnan(MsX).sum())
+    #print(f"Msx: {MsX}")
+    #print(f"Msy: {MsY}")
+    #print(f"x: {xs}")
+    #print(f"y: {ys}")
+    #print(f'filtered_states: {filtered_states}')
+
 
     stateErrorsX.append(mean_squared_error([x[0] for x in xs], [m[0] for m in MsX]))
     stateErrorsY.append(mean_squared_error([x[2] for x in xs], [m[2] for m in MsX]))
@@ -204,23 +207,71 @@ for trial in range(kTrials):
 
     xs_list.append(xs)
     ys_list.append(ys)
+    MsX_list.append(MsX)
+    MsY_list.append(MsY)
+    adjustedMsX_list.append(filtered_states)
+    
     
 
 if kTrials>0:
     for tracker in range(trackers):
         #X-pos plotting for tracker
-        trackerX = [[x[0*tracker*4] for x in xs] for xs in xs_list]
-        trackerY = [[y[0*tracker*2] for y in ys] for ys in ys_list]
-        trackerMsX = [[m[0*tracker*4] for m in Ms] for Ms in MsX_list]
-        trackerMsY = [[m[0*tracker*2] for m in Ms] for Ms in MsY_list]
-        plotMSE(trackerX, trackerY, trackerMsX, trackerMsY, cov_ex=[cov[0][0] for cov in filtered_covs],r=r_std, q=q_std, save=save, name=f"_07p2a_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M-X DnD Model Tracker #{tracker+1}/{trackers} Trials:{kTrials},time:{dataTime},r_std:{r_std},q_std:{q_std}")
+        trackerX = [[x[tracker*4] for x in xs] for xs in xs_list]
+        trackerY = [[y[tracker*2] for y in ys] for ys in ys_list]
+        trackerMsX = [[m[tracker*4] for m in Ms] for Ms in MsX_list]
+        trackerMsY = [[m[tracker*2] for m in Ms] for Ms in MsY_list]
+        trackerCov = [cov[0][0] for cov in kf_covs]
+        trackerFilteredMsX = [[x[tracker*4] for x in xs] for xs in adjustedMsX_list]
         
+        fig = plt.figure(figsize=(15, 6))
+        plt.title(f"CVM, KF + DDPM adjusted KF",y=1.05)
+        plt.axis("off")
+        ax1 = fig.add_subplot(131)
+        ax2 = fig.add_subplot(132)
+        ax3 = fig.add_subplot(133)
+        ax1.plot(np.median(trackerX,axis=0), label='True States', color='blue')
+        ax1.plot(np.median(trackerY,axis=0), label='Observations', color='orange')
+        ax1.plot(np.median(trackerMsY,axis=0), label='KF Estimate (Observation)', color='green')
+        ax1.plot(np.median(trackerMsX,axis=0), label='KF Estimate (State)', color='pink')
+        ax1.plot(np.median(trackerFilteredMsX,axis=0), label='DDPM Adjusted Estimate (State)', color='red')
+        ax1.set_title("Median Graph")
+        ax1.set_xlabel("Time Steps")
+        ax1.legend()
+        
+        
+        ax2.set_title("State MSE over Time")
+        ax2.plot([q_std**2]*len(trackerX[0]), label=f'q_var={q_std**2:.1f}', color='red', linestyle='--')
+        ax2.set_xlabel("Time Steps")
+        ax2.set_ylabel("MSE")
+        for k in range(len(trackerMsX)):
+            xs = trackerX[k]
+            MsX = trackerMsX[k]
+            ax2.plot([mean_squared_error(xs[:i+1], MsX[:i+1]) for i in range(len(xs))])
+        if len(trackerCov)>0:
+            ax2.plot(trackerCov,color='blue',label='Cov',linestyle='--')
+        ax2.legend()
+        
+        
+        ax3.set_title("Measurement MSE over Time")
+        ax3.plot([r_std**2]*len(trackerY[0]),label=f'r_var={r_std**2:.1f}',color='red',linestyle='--')
+        ax3.set_xlabel("Time Steps")
+        ax3.set_ylabel("MSE")
+        for k in range(len(trackerMsY)):
+            ys = trackerY[k]
+            MsY = trackerMsY[k]
+            ax3.plot([mean_squared_error(ys[:i+1], MsY[:i+1]) for i in range(len(ys))])
+        ax3.legend()
+        
+        plt.tight_layout()
+        plt.show()
+
+        raise ValueError("stop here for now")
         #Y-pos plotting for tracker
         trackerX = [[x[2+tracker*4] for x in xs] for xs in xs_list]
         trackerY = [[y[1+tracker*2] for y in ys] for ys in ys_list]
         trackerMsX = [[m[2+tracker*4] for m in Ms] for Ms in MsX_list]
         trackerMsY = [[m[1+tracker*2] for m in Ms] for Ms in MsY_list]
-        plotMSE(trackerX, trackerY,trackerMsX, trackerMsY, r=r_std, q=q_std, cov_ex=[cov[2][2] for cov in filtered_covs], save=save, name=f"_07p2b_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M-Y DnD Model Tracker #{tracker+1}/{trackers} Trials:{kTrials},time:{dataTime},r_std:{r_std},q_std:{q_std}")
+        plotMSE(trackerX, trackerY,trackerMsX, trackerMsY, r=r_std, q=q_std, cov_ex=[cov[2][2] for cov in kf_covs], save=save, name=f"_07p2b_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M-Y DnD Model Tracker #{tracker+1}/{trackers} Trials:{kTrials},time:{dataTime},r_std:{r_std},q_std:{q_std}")
         
         
         plotHist(stateErrorsX, measurementErrorsX, r_std, q_std, dataTime, kTrials, save=save, name=f"_07p2c_tracker{tracker}_constant_velocity_model.png",title=f"C.V.M X Errors Tracker #{tracker+1}/{trackers}")
