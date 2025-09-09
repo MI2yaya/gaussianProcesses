@@ -5,6 +5,10 @@ from tqdm import trange, tqdm
 import os
 import copy
 import numpy as np
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Defined.diffusionModels.FID import compute_fid
 
 class EMA:
     # Explonential Moving Averages to smooth out the weights of the model during training
@@ -27,7 +31,8 @@ class EMA:
 class DiffusionTrainer:
     def __init__(self, model, diffusion, dataset, batch_size=64, lr=2e-4, device=None,
                  ema_decay=0.995, val_ratio=0.05, num_workers=0, pin_memory=False, clip_grad=1.0,
-                 patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,target='noise'):
+                 patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,target='noise',
+                 use_EMA=True):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.diffusion = diffusion.to(self.device)
@@ -51,6 +56,9 @@ class DiffusionTrainer:
         
         self.ckpt_path=ckpt_path
         self.predefined=predefined
+        self.loss_history=[]
+        self.use_EMA=use_EMA
+        self.fids=[]
 
     def compute_loss(self, x, y=None):
         if self.target == 'x0':
@@ -74,7 +82,7 @@ class DiffusionTrainer:
         self.model.train()
         return total / max(1, count)
 
-    def train(self, steps=10000, log_every=100):
+    def train(self, steps=10000, log_every=100,fid_every=None,fid_samples=None):
         self.model.train()
         best_val = float("inf")
         bad = 0
@@ -92,9 +100,11 @@ class DiffusionTrainer:
                 if self.clip_grad is not None:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad)
                 self.opt.step()
-                self.ema.update(self.model)
+                if self.use_EMA:
+                    self.ema.update(self.model)
 
                 step += 1
+                self.loss_history.append(loss.item())
                 if step % log_every == 0:
                     pbar.set_postfix(loss=f"{loss.item():.4f}")
                     pbar.update(log_every)
@@ -104,26 +114,35 @@ class DiffusionTrainer:
                     if val < best_val:
                         best_val = val
                         bad = 0
-                        self.ema_model = copy.deepcopy(self.model)
-                        torch.save(self.ema_model.state_dict(), self.ckpt_path)
-                    
+                        if self.use_EMA:
+                            self.ema_model = copy.deepcopy(self.model)
+                            torch.save(self.ema_model.state_dict(), self.ckpt_path)
                     else:
                         bad += 1
                         if bad >= patience:
                             pbar.write(f"Early stopping at step {step} (best val: {best_val:.4f})")
                             pbar.close()
+                            
+                            if fid_every!=None and fid_samples!=None:
+                                fid = compute_fid(self.val_loader, self.sample(num_samples=fid_samples), self.device)
+                                self.fids.append((step, fid))
+                                
                             return
+                if fid_every!=None and fid_samples!=None and step % fid_every == 0:
+                    fid = compute_fid(self.val_loader, self.sample(num_samples=fid_samples), self.device)
+                    self.fids.append((step, fid))
+                    
                 if step >= steps:
                     break
         pbar.close()
 
     @torch.no_grad()
-    def sample(self, num_samples=16, image_size=28, channels=1, use_ema=True):
+    def sample(self, num_samples=16, image_size=28, channels=1):
         self.model.eval()
 
         # backup and optionally swap in EMA weights
         backup = None
-        if use_ema and os.path.exists(self.ckpt_path):
+        if self.use_EMA and os.path.exists(self.ckpt_path):
             backup = {name: p.data.clone() for name, p in self.model.named_parameters()}
             for name, p in self.model.named_parameters():
                 if name in self.ema.shadow:
@@ -165,3 +184,8 @@ class DiffusionTrainer:
             x = x.view(x.size(0), -1)[:, :noisy_input.size(-1)]  # flatten & remove padding
 
         return x
+
+    def get_loss_history(self):
+        return self.loss_history
+    def get_fid_history(self):
+        return self.fids
