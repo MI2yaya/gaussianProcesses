@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 def cosine_beta_schedule(timesteps: int, s: float = 0.008):
     steps = timesteps + 1
@@ -115,3 +116,52 @@ class GaussianDiffusion(nn.Module):
             return model_mean + torch.sqrt(posterior_var_t) * noise
         else:
             return model_mean
+
+    @torch.no_grad()
+    def ddim_sample(self, batch_size=16, timesteps=5, eta=0.0, device=None, shape=None):
+        device or next(self.model.parameters()).device
+        shape = shape or (batch_size, self.channels, self.image_size, self.image_size)
+
+        x = torch.randn(shape, device=device)
+
+        # linear time steps for simplicity
+        ts = torch.linspace(0, self.timesteps - 1, timesteps, device=device).long()
+        alpha = self.alphas_cumprod  # precomputed alpha schedule
+        sqrt_alpha = torch.sqrt(alpha)
+        sqrt_one_minus_alpha = torch.sqrt(1 - alpha)
+
+        for i in reversed(range(timesteps)):
+            t = ts[i]
+            eps = self.model(x, torch.full((x.size(0),), t, device=device, dtype=torch.long))
+            x0_pred = (x - sqrt_one_minus_alpha[t] * eps) / sqrt_alpha[t]
+            if i > 0:
+                x = sqrt_alpha[ts[i - 1]] * x0_pred + sqrt_one_minus_alpha[ts[i - 1]] * eps
+            else:
+                x = x0_pred
+        return x
+    
+    @torch.no_grad()
+    def posterior_sample(self, y_meas, A, A_T, lam=.1, sigma_y=0.01):
+        device = next(self.model.parameters()).device
+        x = y_meas.clone()
+        
+        step_to_show = 500
+        
+        for i, t in enumerate(reversed(range(self.timesteps))):
+            t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
+            x = self.p_sample(x, t_tensor)
+            
+            diff = A(x) - y_meas
+            grad = A_T(diff) / (sigma_y ** 2)
+            x = x - lam * grad
+            x = x / x.abs().max().clamp(min=1.0)
+
+            if i == step_to_show:
+                plt.figure(figsize=(3,3))
+                plt.imshow(x[0,0].cpu().clamp(-1,1), cmap='gray')
+                plt.title(f"Timestep {t}")
+                plt.axis('off')
+                plt.show()
+        
+        return x
+    

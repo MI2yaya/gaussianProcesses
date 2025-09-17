@@ -5,6 +5,7 @@ import sys, os
 import matplotlib.pyplot as plt
 from PIL import Image
 import math
+import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.diffusionModels.Trainer import DiffusionTrainer
@@ -26,116 +27,115 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("using cuda:", torch.cuda.is_available())
 
-timestepTesting=[25,100,200,1000,10000]
-trainingStepTesting=[10000,10000,10000,10000,10000]
+timestepTesting=[25,100,200]
+trainingStepTesting=[1000,1000,1000]
 save=True
-losses=[]
-fids=[]
-for k,timestep in enumerate(timestepTesting):
-    trainingStep=trainingStepTesting[k]
-    model = UNet(
-        in_channels=1,
-        out_channels=1,
-        base_dim=64,
-        dim_mults=(1, 2, 4)
-    ).to(device)
-    diffusion = GaussianDiffusion(
-        model, 
-        timesteps=timestep,
-        schedule="cosine"
-    ).to(device)
-    trainer = DiffusionTrainer(
-        model, 
-        diffusion, 
-        dataset, 
-        batch_size=batch_size, 
-        lr=1e-4,
-        device=device,
-        ema_decay=0.995,
-        patience=10,
-        #ckpt_path=os.path.join('diffusionModels\data\MNIST',"best_ema.pt"),
-        use_EMA=False
-    )
+num_trials=5
+fid_samples=50
 
-    print("Starting training...")
-    trainer.train(steps=trainingStep, log_every=100,fid_every=trainingStep,fid_samples=500)
-    losses.append(trainer.get_loss_history())
+results = {t: {"losses": [], "fids": []} for t in timestepTesting}
+for k, timestep in enumerate(timestepTesting):
+    trainingStep = trainingStepTesting[k]
 
-    fid = trainer.get_fid_history()
-    print("LAST FIDs:", fid[-1][1] if fid else "No FID calculated")
-    fids.append(fid)
+    for trial in range(num_trials):
+        print(f"\n=== Trial {trial+1}/{num_trials}, Timesteps={timestep} ===")
 
-    print("Sampling images...")
-    sampled_images = trainer.sample(num_samples=16)
-    # Plot
-    fig, axes = plt.subplots(4, 4, figsize=(6,6))
-    fig.suptitle(f"Sampled Images after Trial {k+1}, Timesteps={timestep}, Training Steps={trainingStep}")
-    for i, ax in enumerate(axes.flat):
-        img = sampled_images[i].detach().cpu().numpy().transpose(1, 2, 0)
-        img = (img + 1) / 2  # rescale 0-1
-        ax.imshow(img.squeeze(), cmap="gray")
-        ax.axis("off")
+        model = UNet(
+            in_channels=1,
+            out_channels=1,
+            base_dim=64,
+            dim_mults=(1, 2, 4)
+        ).to(device)
 
-    if save:
-        plt.savefig(os.path.join("diffusionModels","figs",f"sampledImagesTrial{k+1}_timesteps{timestep}_steps{trainingStep}.png"))
+        diffusion = GaussianDiffusion(
+            model,
+            timesteps=timestep,
+            schedule="cosine"
+        ).to(device)
 
-    #plt.show()
-    plt.close()
+        trainer = DiffusionTrainer(
+            model,
+            diffusion,
+            dataset,
+            batch_size=batch_size,
+            lr=1e-4,
+            device=device,
+            ema_decay=0.995,
+            patience=10,
+            use_EMA=False
+        )
 
-if save:
-    save_dir = os.path.join("diffusionModels", "figs")
-    imgs = []
+        trainer.train(
+            steps=trainingStep,
+            log_every=100,
+            fid_every=trainingStep,
+            fid_samples=fid_samples
+        )
 
-    # Collect images
-    for img_path in sorted(os.listdir(save_dir)):
-        if img_path.startswith("sampledImagesTrial"):
-            img = Image.open(os.path.join(save_dir, img_path))
-            imgs.append(img.copy())  # keep a copy
-            img.close()
-            os.remove(os.path.join(save_dir, img_path))
+        # Save histories
+        results[timestep]["losses"].append(trainer.get_loss_history())
+        results[timestep]["fids"].append(trainer.get_fid_history())
 
-    if imgs:
-        total_width = sum(img.width for img in imgs)
-        max_height = max(img.height for img in imgs)
-        combined = Image.new('RGB', (total_width, max_height))
-
-        x_offset = 0
-        for img in imgs:
-            combined.paste(img, (x_offset, 0))
-            x_offset += img.width
-
-        combined.save(os.path.join(save_dir, "all_sampled_images.png"))
+        print("LAST FIDs:", results[timestep]["fids"][-1][-1][1] if results[timestep]["fids"][-1] else "No FID")
 
 
-for i in range(len(losses)):
-    if len(losses[i])<max(trainingStepTesting):
-        losses[i]+=[losses[i][-1]]*(max(trainingStepTesting)-len(losses[i]))
-    
+save_dir = os.path.join("diffusionModels", "figs")
+os.makedirs(save_dir, exist_ok=True)
 
-fig,ax=plt.subplots(1,1,figsize=(6,6))
-for k in range(len(timestepTesting)):
-    ax.plot(losses[k],label=f'Timesteps={timestepTesting[k]}, Training Steps={trainingStepTesting[k]}')
-    ax.axvline(x=trainingStepTesting[k], color='gray', linestyle='--', linewidth=0.8)
+fig, ax = plt.subplots(figsize=(7, 6))
 
+for timestep in timestepTesting:
+    all_losses = results[timestep]["losses"]
+
+    max_len = max(len(l) for l in all_losses)
+    losses_matrix = np.full((len(all_losses), max_len), np.nan)
+
+    for i, trial_losses in enumerate(all_losses):
+        losses_matrix[i, :len(trial_losses)] = trial_losses
+
+    mean_loss = np.nanmean(losses_matrix, axis=0)
+    std_loss = np.nanstd(losses_matrix, axis=0)
+
+    steps = np.arange(1, max_len+1)
+
+    ax.plot(steps, mean_loss, label=f"Timesteps={timestep}")
+    ax.fill_between(steps, mean_loss - std_loss, mean_loss + std_loss, alpha=0.2)
+
+ax.set_yscale("log")
+ax.set_xlabel("Training Steps")
+ax.set_ylabel("Loss")
+ax.set_title(f"Training Loss (mean ± std, {num_trials} trials)")
 ax.legend()
-ax.set_yscale('log')
-ax.set_xlabel('Training Steps')
-ax.set_ylabel('Loss')
+plt.tight_layout()
 if save:
-    plt.savefig(os.path.join("diffusionModels","figs",f"losses.png"))
+    plt.savefig(os.path.join(save_dir, "Losses.png"))
 plt.show()
 
 
-fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+fig, ax = plt.subplots(figsize=(7, 6))
 
-for k in range(len(timestepTesting)):
-    fid_steps, fid_values = zip(*fids[k])
-    ax.plot(fid_steps, fid_values, marker='o', label=f'Timesteps={timestepTesting[k]}, Steps={trainingStepTesting[k]}')
+colors = plt.cm.tab10.colors
+legend_handles = []
+
+for timestep_idx, timestep in enumerate(timestepTesting):
+    all_fids = results[timestep]["fids"]
+
+    color = colors[timestep_idx % len(colors)]
+    for trial_idx, trial_fids in enumerate(all_fids):
+        if not trial_fids:
+            continue
+        steps, vals = zip(*trial_fids)
+        ax.scatter(steps, vals, color=color, alpha=0.7)
+        ax.plot(steps, vals, color=color, alpha=0.3) 
+
+    handle = plt.Line2D([0], [0], marker='o', color=color, label=f"Timesteps={timestep}", linestyle='')
+    legend_handles.append(handle)
 
 ax.set_xlabel("Training Step")
 ax.set_ylabel("FID Score")
-ax.set_title("FID Progression Across Trials")
-ax.legend()
+ax.set_title(f"FID Scores (fid_samples={fid_samples}, {num_trials} trials)")
+ax.legend(handles=legend_handles)
+plt.tight_layout()
 if save:
-    plt.savefig(os.path.join("diffusionModels","figs",f"FIDScores.png"))
+    plt.savefig(os.path.join(save_dir, "FIDScores.png"))
 plt.show()

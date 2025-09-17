@@ -9,6 +9,7 @@ import sys, os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.diffusionModels.Trainer import DiffusionTrainer
+from Defined.diffusionModels.FID import compute_fid
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
@@ -49,7 +50,7 @@ trainer = DiffusionTrainer(
 trainer.train(steps=1000, log_every=100)
 
 sampled_images = trainer.sample(num_samples=16)
-
+fid = compute_fid(dataset,trainer.sample(num_samples=1000),device)
 # Plot
 fig = plt.figure(figsize=(6, 6))
 axes = fig.subplots(4, 4)
@@ -60,3 +61,6 @@ for i, ax in enumerate(axes.flat):
     ax.axis("off")
 
 plt.show()
+
+
+print(fid)

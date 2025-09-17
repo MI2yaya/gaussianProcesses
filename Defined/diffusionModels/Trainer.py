@@ -8,7 +8,11 @@ import numpy as np
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Defined.diffusionModels.FID import compute_fid
+from Defined.diffusionModels.FID import get_inception_model, get_activations, compute_fid
+import numpy as np
+
+
+#todo, link DDIM
 
 class EMA:
     # Explonential Moving Averages to smooth out the weights of the model during training
@@ -32,7 +36,7 @@ class DiffusionTrainer:
     def __init__(self, model, diffusion, dataset, batch_size=64, lr=2e-4, device=None,
                  ema_decay=0.995, val_ratio=0.05, num_workers=0, pin_memory=False, clip_grad=1.0,
                  patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,target='noise',
-                 use_EMA=True):
+                 use_EMA=True, use_DDIM=False):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.diffusion = diffusion.to(self.device)
@@ -59,6 +63,13 @@ class DiffusionTrainer:
         self.loss_history=[]
         self.use_EMA=use_EMA
         self.fids=[]
+        
+        self.inception = get_inception_model(self.device)
+        self.real_acts = get_activations(self.val_loader, self.inception, device, max_images=10000)
+        self.mu_real, self.sigma_real = self.real_acts.mean(axis=0), np.cov(self.real_acts, rowvar=False)
+        self.real_stats = (self.mu_real, self.sigma_real)
+        
+        self.use_DDIM=use_DDIM
 
     def compute_loss(self, x, y=None):
         if self.target == 'x0':
@@ -124,12 +135,13 @@ class DiffusionTrainer:
                             pbar.close()
                             
                             if fid_every!=None and fid_samples!=None:
-                                fid = compute_fid(self.val_loader, self.sample(num_samples=fid_samples), self.device)
+                                fid = compute_fid(self.real_stats, self.sample(num_samples=fid_samples), self.inception, self.device)
                                 self.fids.append((step, fid))
                                 
                             return
-                if fid_every!=None and fid_samples!=None and step % fid_every == 0:
-                    fid = compute_fid(self.val_loader, self.sample(num_samples=fid_samples), self.device)
+                if fid_every is not None and fid_samples is not None and step % fid_every == 0:
+                    fake_imgs = self.sample(num_samples=fid_samples)
+                    fid = compute_fid(self.real_stats, fake_imgs, self.inception, self.device)
                     self.fids.append((step, fid))
                     
                 if step >= steps:
@@ -157,7 +169,8 @@ class DiffusionTrainer:
         # restore original weights if we swapped EMA
         if backup is not None:
             for name, p in self.model.named_parameters():
-                p.data.copy_(backup[name])
+                if name in backup:
+                    p.data.copy_(backup[name])
 
         return imgs
     
@@ -174,10 +187,32 @@ class DiffusionTrainer:
             padded.view(x.size(0), -1)[:, :L] = x
             x = padded
 
-        # Denoise iteratively, this is kind of slow
         for t in reversed(range(timesteps)):
             t_tensor = torch.full((x.size(0),), t, device=x.device, dtype=torch.long)
             x = self.diffusion.p_sample(x, t_tensor)
+
+        # Flatten if image
+        if self.is_image_model and x.ndim > 2:
+            x = x.view(x.size(0), -1)[:, :noisy_input.size(-1)]  # flatten & remove padding
+
+        return x
+
+    @torch.no_grad()
+    def ddim_denoise(self, noisy_input, timesteps=5):
+        self.model.eval()
+        x = noisy_input.clone().to(next(self.model.parameters()).device)
+
+        # Pad/reshape for UNet if needed
+        if self.is_image_model and x.ndim == 2:
+            L = x.size(-1)
+            H_dim = int(np.ceil(np.sqrt(L)))
+            padded = torch.zeros(x.size(0), 1, H_dim, H_dim, device=x.device)
+            padded.view(x.size(0), -1)[:, :L] = x
+            x = padded
+
+        # Use DDIM deterministic sampling
+        x = self.diffusion.ddim_sample(batch_size=x.size(0), timesteps=timesteps,
+                                    device=x.device, shape=x.shape)
 
         # Flatten if image
         if self.is_image_model and x.ndim > 2:
@@ -189,3 +224,5 @@ class DiffusionTrainer:
         return self.loss_history
     def get_fid_history(self):
         return self.fids
+    
+    

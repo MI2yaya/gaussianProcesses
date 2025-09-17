@@ -89,7 +89,6 @@ class UNet(nn.Module):
         for up, dec in zip(self.upconvs, self.decoders):
             x = up(x)
             skip = enc_feats.pop()
-            # Crop if necessary
             if x.shape[-2:] != skip.shape[-2:]:
                 diffY = skip.size(2) - x.size(2)
                 diffX = skip.size(3) - x.size(3)
@@ -97,4 +96,4 @@ class UNet(nn.Module):
                               diffY//2, diffY - diffY//2])
             x = dec(torch.cat([x, skip], dim=1), t_emb)
 
-        return self.out(x)
+        return torch.tanh(self.out(x)) 
