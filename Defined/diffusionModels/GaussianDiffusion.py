@@ -145,7 +145,7 @@ class GaussianDiffusion(nn.Module):
         device = next(self.model.parameters()).device
         x = y_meas.clone()
         
-        step_to_show = 500
+        step_to_show = None
         
         for i, t in enumerate(reversed(range(self.timesteps))):
             t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
@@ -154,7 +154,8 @@ class GaussianDiffusion(nn.Module):
             diff = A(x) - y_meas
             grad = A_T(diff) / (sigma_y ** 2)
             x = x - lam * grad
-            x = x / x.abs().max().clamp(min=1.0)
+            x = x.clamp(-1, 1)
+
 
             if i == step_to_show:
                 plt.figure(figsize=(3,3))
@@ -162,6 +163,6 @@ class GaussianDiffusion(nn.Module):
                 plt.title(f"Timestep {t}")
                 plt.axis('off')
                 plt.show()
-        
+
         return x
     
