@@ -49,7 +49,7 @@ class DiffusionTrainer:
         train_set, val_set = random_split(dataset, [n_train, n_val], generator=torch.Generator().manual_seed(42))
 
         self.train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                       drop_last=True, num_workers=num_workers, pin_memory=pin_memory)
+                                       drop_last=False, num_workers=num_workers, pin_memory=pin_memory)
         self.val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False,
                                      drop_last=False, num_workers=num_workers, pin_memory=pin_memory)
 
@@ -63,11 +63,11 @@ class DiffusionTrainer:
         self.loss_history=[]
         self.use_EMA=use_EMA
         self.fids=[]
-        
-        self.inception = get_inception_model(self.device)
-        self.real_acts = get_activations(self.val_loader, self.inception, device, max_images=10000)
-        self.mu_real, self.sigma_real = self.real_acts.mean(axis=0), np.cov(self.real_acts, rowvar=False)
-        self.real_stats = (self.mu_real, self.sigma_real)
+        if self.is_image_model:
+            self.inception = get_inception_model(self.device)
+            self.real_acts = get_activations(self.val_loader, self.inception, device, max_images=10000)
+            self.mu_real, self.sigma_real = self.real_acts.mean(axis=0), np.cov(self.real_acts, rowvar=False)
+            self.real_stats = (self.mu_real, self.sigma_real)
         
         self.use_DDIM=use_DDIM
 
