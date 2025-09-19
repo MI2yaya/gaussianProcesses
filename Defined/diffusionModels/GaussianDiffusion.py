@@ -142,7 +142,7 @@ class GaussianDiffusion(nn.Module):
     
     @torch.no_grad()
     def posterior_sample(self, y_meas, A, A_T, lam=.1, sigma_y=0.01):
-        device = next(self.model.parameters()).device
+        device = y_meas.device
         x = y_meas.clone()
         
         step_to_show = None
@@ -166,3 +166,14 @@ class GaussianDiffusion(nn.Module):
 
         return x
     
+    
+    @torch.no_grad()
+    def denoise_states(self,noisy_states):
+        device = noisy_states.device
+        x = noisy_states.clone()
+
+        for t in reversed(range(self.timesteps)):
+            t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
+            x = self.p_sample(x, t_tensor)  # already works for non-image since _reshape handles it
+
+        return x
