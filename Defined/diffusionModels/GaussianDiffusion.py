@@ -47,17 +47,16 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('pred_x0_coeff', 1.0 / self.sqrt_alphas_cumprod)
         self.register_buffer('pred_eps_coeff', betas / self.sqrt_one_minus_alphas_cumprod)
 
-    def _reshape(self, x, t):
-        if self.is_image_model:
-            return self.sqrt_alphas_cumprod[t].view(-1,1,1,1), self.sqrt_one_minus_alphas_cumprod[t].view(-1,1,1,1)
-        else:
-            return self.sqrt_alphas_cumprod[t].view(-1,1), self.sqrt_one_minus_alphas_cumprod[t].view(-1,1)
+    def _extract(self, a, t, x_shape):
+        batch_size = t.shape[0]
+        out = a.gather(0, t)  # shape [batch]
+        return out.view(batch_size, *([1] * (len(x_shape) - 1)))
 
     def q_sample(self, x0, t, noise=None):
-        #simulates 1 step of forward noising process
         if noise is None:
             noise = torch.randn_like(x0)
-        s1, s2 = self._reshape(x0, t)
+        s1 = self._extract(self.sqrt_alphas_cumprod, t, x0.shape)
+        s2 = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x0.shape)
         return s1 * x0 + s2 * noise
 
     def forward(self, x, x0=None):
@@ -168,12 +167,12 @@ class GaussianDiffusion(nn.Module):
     
     
     @torch.no_grad()
-    def denoise_states(self,noisy_states):
+    def denoise_states(self, noisy_states):
         device = noisy_states.device
         x = noisy_states.clone()
 
         for t in reversed(range(self.timesteps)):
             t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
-            x = self.p_sample(x, t_tensor)  # already works for non-image since _reshape handles it
+            x = self.p_sample(x, t_tensor)
 
         return x
