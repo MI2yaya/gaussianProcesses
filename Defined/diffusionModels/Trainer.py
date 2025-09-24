@@ -63,6 +63,7 @@ class DiffusionTrainer:
         self.loss_history=[]
         self.use_EMA=use_EMA
         self.fids=[]
+        
         if self.is_image_model:
             self.inception = get_inception_model(self.device)
             self.real_acts = get_activations(self.val_loader, self.inception, device, max_images=10000)

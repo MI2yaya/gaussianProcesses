@@ -4,16 +4,18 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.diffusionModels.sinusoidalEmbedding import SinusoidalEmbeddingModule
+import math
 
 class ResidualMLP(nn.Module): # Residual block for MLP
     def __init__(self, dim):
         super().__init__()
         self.fc1 = nn.Linear(dim, dim)
         self.fc2 = nn.Linear(dim, dim)
-        self.act = nn.ReLU()
+        self.norm = nn.LayerNorm(dim)
+        self.act = nn.SiLU()
     
     def forward(self, x):
-        return x + self.fc2(self.act(self.fc1(x)))
+        return x + self.fc2(self.act(self.norm(self.fc1(x)))) / math.sqrt(2)
 
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dim=128,time_dim=32, num_res_blocks=2):
