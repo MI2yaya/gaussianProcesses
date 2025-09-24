@@ -176,3 +176,35 @@ class GaussianDiffusion(nn.Module):
             x = self.p_sample(x, t_tensor)
 
         return x
+    
+    @torch.no_grad()
+    def adjusted_denoising_sampling(self,noisy_states,P):
+        
+        x = noisy_states.clone()
+        P_ref = torch.mean(P,dim=0)
+        shape = (x.size(0), 1)
+        for i,t in enumerate(reversed(range(self.timesteps))):
+            t_tensor = torch.full((x.size(0),), t, device=x.device, dtype=torch.long)
+            x = self.p_sample(x, t_tensor)
+
+            G = -torch.inverse(P[i]) @ (x - noisy_states)
+
+            a_t = self.alpha_cumprod[t]
+            sqrt_one_minus_alphas_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t].view(*shape)
+            sqrt_recip_alphas_t = self.sqrt_recip_alphas[t].view(*shape)
+            lam = min(1,torch.trace(P_ref)/(torch.trace(P[i])+torch.eye(0,*shape)))
+
+            noise_guided = self.model(x, t_tensor) + (lam * sqrt_one_minus_alphas_cumprod_t * G)
+            adj = torch.sqrt((1-a_t)(self.betas[t].view(*shape))/(1-a_t))*torch.randn_like(0,torch.eye(*shape))
+            x = sqrt_recip_alphas_t * (x - (1-a_t/sqrt_one_minus_alphas_cumprod_t)*noise_guided) + adj
+            
+    @torch.no_grad()
+    def sample_state(self,batch_size=1):
+        device = next(self.model.parameters()).device
+        x = torch.randn(batch_size, 2, device=device)
+
+        for t in reversed(range(self.timesteps)):
+            t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
+            x = self.p_sample(x, t_tensor)
+
+        return x
