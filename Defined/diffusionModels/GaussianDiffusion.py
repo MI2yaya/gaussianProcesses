@@ -36,7 +36,7 @@ class GaussianDiffusion(nn.Module):
         # useful precomputes
         self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(self.alphas_cumprod))
         self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1.0 - self.alphas_cumprod))
-        self.register_buffer('sqrt_recip_alphas', torch.sqrt(1.0 / (1.0 - betas)))
+        self.register_buffer('sqrt_recip_alphas', torch.sqrt(1.0/self.alphas))
 
         # posterior q(x_{t-1} | x_t, x_0) variance (Ho et al. 2020)
         posterior_variance = betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
@@ -53,6 +53,7 @@ class GaussianDiffusion(nn.Module):
         return out.view(batch_size, *([1] * (len(x_shape) - 1)))
 
     def q_sample(self, x0, t, noise=None):
+        #feed normalized data and timestep, add noise according to schedule
         if noise is None:
             noise = torch.randn_like(x0)
         s1 = self._extract(self.sqrt_alphas_cumprod, t, x0.shape)
@@ -102,13 +103,23 @@ class GaussianDiffusion(nn.Module):
         else:
             shape = (x.size(0), 1)
 
-        betas_t = self.betas[t].view(*shape)
+        beta_t = self.betas[t].view(*shape)
         sqrt_one_minus_alphas_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t].view(*shape)
-        sqrt_recip_alphas_t = self.sqrt_recip_alphas[t].view(*shape)
-
         eps_theta = self.model(x, t)
-        model_mean = sqrt_recip_alphas_t * (x - betas_t * eps_theta / sqrt_one_minus_alphas_cumprod_t)
-
+        
+        if self.target=='noise':
+            sqrt_recip_alphas_t = self.sqrt_recip_alphas[t].view(*shape)
+            model_mean = sqrt_recip_alphas_t * (x - beta_t * eps_theta / sqrt_one_minus_alphas_cumprod_t)
+        elif self.target=='x0':
+            x0_pred = eps_theta  # model predicts x0
+            alpha_cumprod_prev_t = self.alphas_cumprod_prev[t].view(*shape)
+            sqrt_alphas_cumprod_t = self.sqrt_alphas_cumprod[t].view(*shape)
+            model_mean = (
+                sqrt_alphas_cumprod_t * x0_pred +
+                torch.sqrt(1 - alpha_cumprod_prev_t) * (x - sqrt_alphas_cumprod_t * x0_pred) / torch.sqrt(1 - self.alphas_cumprod[t]) #1/sqrt(alpha_t) blows up inputs...
+            )
+        else:
+            raise ValueError(f"Unknown target type: {self.target}")
         if (t > 0).any():
             posterior_var_t = self.posterior_variance[t].view(*shape)
             noise = torch.randn_like(x)
@@ -176,35 +187,20 @@ class GaussianDiffusion(nn.Module):
             x = self.p_sample(x, t_tensor)
 
         return x
-    
-    @torch.no_grad()
-    def adjusted_denoising_sampling(self,noisy_states,P):
-        
-        x = noisy_states.clone()
-        P_ref = torch.mean(P,dim=0)
-        shape = (x.size(0), 1)
-        for i,t in enumerate(reversed(range(self.timesteps))):
-            t_tensor = torch.full((x.size(0),), t, device=x.device, dtype=torch.long)
-            x = self.p_sample(x, t_tensor)
-
-            G = -torch.inverse(P[i]) @ (x - noisy_states)
-
-            a_t = self.alpha_cumprod[t]
-            sqrt_one_minus_alphas_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t].view(*shape)
-            sqrt_recip_alphas_t = self.sqrt_recip_alphas[t].view(*shape)
-            lam = min(1,torch.trace(P_ref)/(torch.trace(P[i])+torch.eye(0,*shape)))
-
-            noise_guided = self.model(x, t_tensor) + (lam * sqrt_one_minus_alphas_cumprod_t * G)
-            adj = torch.sqrt((1-a_t)(self.betas[t].view(*shape))/(1-a_t))*torch.randn_like(0,torch.eye(*shape))
-            x = sqrt_recip_alphas_t * (x - (1-a_t/sqrt_one_minus_alphas_cumprod_t)*noise_guided) + adj
             
     @torch.no_grad()
-    def sample_state(self,batch_size=1):
+    def sample_state(self,batch_size=1,steps=None):
         device = next(self.model.parameters()).device
-        x = torch.randn(batch_size, 2, device=device)
+        if steps == None:
+            steps = self.model.input_dim 
+        xs = []
+        for _ in range(batch_size):
+            x = torch.randn(1, steps, device=device)
 
-        for t in reversed(range(self.timesteps)):
-            t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
-            x = self.p_sample(x, t_tensor)
+            for t in reversed(range(self.timesteps)):
+                t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)
+                x = self.p_sample(x, t_tensor)
 
-        return x
+            xs.append(x.flatten().cpu().numpy())
+        return xs
+    

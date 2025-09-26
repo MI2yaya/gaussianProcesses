@@ -13,24 +13,24 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("using cuda:", torch.cuda.is_available())
 
-dataSteps = 1000
-dataSamples= 100
-trainingSteps=1000
-diffusionTimesteps=100
+dataSteps = 10
+dataSamples= 10000
+trainingSteps= 100000
+diffusionTimesteps=10000
 ckpt_path=os.path.join('diffusionModels','data','SinusoidalWaves','DDPM.pt')
 q=0.01
 np.random.seed(42)
 preload=False
 
 def sinusoidalWaves(steps=100,dt=1,q=1):
-    xs= [0]
-    ys= [0]
-    amplitude=np.random.uniform(0.5,2)
-    frequency=np.random.uniform(0.1,0.5)
-    phase=np.random.uniform(0,np.pi)
-    for step in range(steps):
+    xs= []
+    ys= []
+    amplitude=np.random.uniform(0.5,10)
+    frequency=np.random.uniform(.5,5)
+    phase=np.random.uniform(0,2*np.pi)
+    for step in range(steps*(int(dt**-1))):
         w = np.random.normal(0, q)
-        x = np.sin(2*np.pi*frequency*step*dt + phase)*amplitude
+        x = np.sin(frequency*step*dt + phase)*amplitude
         xs.append(x)
         y = x + w
         ys.append(y)
@@ -46,27 +46,38 @@ def trainingData(dataSamples=10, dataTime=100, dt=1,q=1):
         noisy_states.append(noisy_state)
     return np.array(noisy_states), np.array(true_states)
 
-noisy_states, true_states = trainingData(dataSamples=1,dt=1,q=q)
+noisy_states, true_states = trainingData(dataSamples=3,dataTime=dataSteps,dt=.1,q=q)
 fig = plt.figure(figsize=(10, 6))
-plt.title('2D Random Walk with Noisy Observations')
+plt.title('Sinusoidal Wave with Noisy Observations')
 plt.axis('off')
 axis = fig.add_subplot(111)
-axis.plot(true_states.reshape(-1,1), label='True State', color='g')
-axis.plot(noisy_states.reshape(-1,1), label='Noisy Observations', color='r')
-axis.legend()
+
+for true_state, noisy_state in zip(true_states, noisy_states):
+    axis.plot(noisy_state, label='True State', color='g')
+    axis.plot(true_state, label='Noisy Observations', color='r')
+    axis.legend()
 
 plt.show()
 
-noisy_states, true_states = trainingData(dataSamples=dataSamples, dataTime=dataSteps, dt=1, q=q)
+noisy_states, true_states = trainingData(dataSamples=dataSamples, dataTime=dataSteps, dt=.1, q=q)
+# Flatten over samples and timesteps
+all_noisy = noisy_states.flatten()
+all_true = true_states.flatten()
 
+mean = all_noisy.mean()
+std = all_noisy.std()
+
+noisy_states_norm = (noisy_states - mean) / std
+true_states_norm = (true_states - mean) / std
+print(f"Data mean: {mean}, std: {std}")
 dataset = TensorDataset(
-    torch.tensor(noisy_states,dtype=torch.float32).reshape(-1,1), 
-    torch.tensor(true_states,dtype=torch.float32).reshape(-1,1) #ignored during noise training
+    torch.tensor(noisy_states_norm,dtype=torch.float32),
+    torch.tensor(true_states_norm,dtype=torch.float32)
 )
 
 model = MLP(
-    input_dim=2,
-    hidden_dim=64,
+    input_dim=noisy_states.shape[1],
+    hidden_dim=512,
     time_dim=32,
     num_res_blocks=2
 )
@@ -75,20 +86,19 @@ diffusion = GaussianDiffusion(
     timesteps=diffusionTimesteps,
     schedule='cosine',
     is_image_model=False,
-    target='noise'
+    target='x0'
 )
 trainer = DiffusionTrainer(
     model,
     diffusion,
     dataset=dataset,
     batch_size=32,
-    lr=1e-3,
+    lr=1e-4,
     device=device,
     ema_decay=0.995,
-    patience=10,
+    patience=30,
     ckpt_path=ckpt_path,
-    is_image_model=False,
-    target='noise'
+    is_image_model=False
 )
 if preload:
     state_dict = torch.load(ckpt_path, map_location=device)
@@ -105,4 +115,18 @@ else:
 
 model.eval()
 
-diffusion.sample_state()
+seq_norms = np.array(diffusion.sample_state(batch_size=5,steps=noisy_states_norm.shape[1]))
+seqs = seq_norms * std + mean  # Denormalize
+
+all_seq = seqs.flatten()
+mean = all_seq.mean()
+std = all_seq.std()
+print(f"Sampled data mean: {mean}, std: {std}")
+
+fig = plt.figure(figsize=(10, 6))
+plt.title('Generated Sinusoidal Wave')
+plt.axis('off')
+axis = fig.add_subplot(111)
+for seq in seqs:
+    axis.plot(seq, label='Generated Wave')
+plt.show()

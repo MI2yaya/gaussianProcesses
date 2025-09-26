@@ -35,13 +35,13 @@ class EMA:
 class DiffusionTrainer:
     def __init__(self, model, diffusion, dataset, batch_size=64, lr=2e-4, device=None,
                  ema_decay=0.995, val_ratio=0.05, num_workers=0, pin_memory=False, clip_grad=1.0,
-                 patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,target='noise',
+                 patience=10, ckpt_path="best_ema.pt",predefined=False, is_image_model=True,
                  use_EMA=True, use_DDIM=False):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.diffusion = diffusion.to(self.device)
         self.is_image_model = is_image_model
-        self.target=target #noise or x0
+        self.target=self.diffusion.target
 
         n = len(dataset)
         n_val = max(1, int(n * val_ratio))
