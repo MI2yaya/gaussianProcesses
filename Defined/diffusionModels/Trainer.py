@@ -122,7 +122,7 @@ class DiffusionTrainer:
                     pbar.update(log_every)
 
                     val = self._evaluate()
-                    print(f"step {step}: train loss {loss.item():.4f} \n val: {val} best val: {best_val} bad: {bad} / {patience}")
+                    print(f"\nstep {step}: train loss {loss.item():.4f} \n val: {val} best val: {best_val} bad: {bad} / {patience}")
                     if val < best_val:
                         best_val = val
                         bad = 0
