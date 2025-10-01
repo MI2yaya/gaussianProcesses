@@ -189,13 +189,17 @@ class GaussianDiffusion(nn.Module):
         return x
             
     @torch.no_grad()
-    def sample_state(self,batch_size=1,steps=None):
+    def sample_state(self, batch_size=1, steps=None,x_init=None):
         device = next(self.model.parameters()).device
-        if steps == None:
+        if steps is None:
             steps = self.model.input_dim 
         xs = []
+
         for _ in range(batch_size):
-            x = torch.randn(1, steps, device=device)
+            if x_init is not None:
+                x = x_init.clone().to(device)
+            else:
+                x = torch.randn(1, 1, steps, device=device)  # Add channel dim
 
             for t in reversed(range(self.timesteps)):
                 t_tensor = torch.full((x.size(0),), t, device=device, dtype=torch.long)

@@ -26,7 +26,8 @@ dataset = TensorDataset(x_train, y_train)
 
 # Define model and diffusion
 model = Unet(
-    dim=64, 
+    dim=2,
+    init_dim=64, 
     dim_mults=(1, 2, 4),
     channels=1
 ).to(device)

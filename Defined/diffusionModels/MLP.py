@@ -42,4 +42,4 @@ class MLP(nn.Module):
         h = self.input_layer(x)            # [B, hidden_dim]
         for block in self.res_blocks:
             h = block(h + t_emb)           # inject timestep info
-        return self.out(h)
+        return torch.tanh(self.out(h))

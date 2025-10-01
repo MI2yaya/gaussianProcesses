@@ -6,6 +6,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from Defined.diffusionModels.Trainer import DiffusionTrainer
 from Defined.diffusionModels.GaussianDiffusion import GaussianDiffusion
 from Defined.diffusionModels.MLP import MLP
+from Defined.diffusionModels.UNet import UNet
+from Defined.diffusionModels.S4 import S4Backbone
 from Defined.KFs.EKF import ExtendedKalmanFilter
 from torch.utils.data import TensorDataset
 import torch
@@ -13,10 +15,10 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("using cuda:", torch.cuda.is_available())
 
-dataSteps = 20
-dataSamples= 5000
-trainingSteps= 100000
-diffusionTimesteps=1000
+dataSteps = 10
+dataSamples = 5000
+trainingSteps = 100000
+diffusionTimesteps = 200
 ckpt_path=os.path.join('diffusionModels','data','SinusoidalWaves','DDPM.pt')
 q=0.001
 np.random.seed(42)
@@ -28,14 +30,14 @@ dataRange = np.arange(0, dataSteps, dt)
 def sinusoidalWaves(steps=100,dt=1,q=1):
     xs= []
     ys= []
-    amplitude=np.random.uniform(1,10)
-    frequency=np.random.uniform(.5,4)
+    amplitude=np.random.uniform(1,5)
+    frequency=np.random.uniform(1,4)
     phase=np.random.uniform(0,2*np.pi)
     for step in range(steps*(int(dt**-1))):
         w = np.random.normal(0, q)
         x = np.sin(frequency*step*dt + phase)*amplitude
         xs.append(x)
-        y = x + w*amplitude
+        y = x + w
         ys.append(y)
     return xs, ys
 
@@ -69,19 +71,20 @@ all_true = true_states.flatten()
 mean = all_noisy.mean()
 std = all_noisy.std()
 
-noisy_states_norm = (noisy_states - mean) / std
-true_states_norm = (true_states - mean) / std
+noisy_states = (noisy_states - mean) / std
+true_states = (true_states - mean) / std
 print(f"Data mean: {mean}, std: {std}, shape {noisy_states.shape}")
 dataset = TensorDataset(
-    torch.tensor(noisy_states_norm,dtype=torch.float32),
-    torch.tensor(true_states_norm,dtype=torch.float32)
+    torch.tensor(noisy_states,dtype=torch.float32).unsqueeze(-1),
+    torch.tensor(true_states,dtype=torch.float32).unsqueeze(-1) #ignored in noise measurement
 )
-
-model = MLP(
-    input_dim=noisy_states.shape[1],
-    hidden_dim=512,
-    time_dim=32,
-    num_res_blocks=6
+model = S4Backbone(
+    d_input=1,
+    d_output=1,
+    d_model=128,
+    n_layers=6,
+    dropout=0.1,
+    prenorm=False
 ).to(device)
 
 diffusion = GaussianDiffusion(
@@ -95,11 +98,11 @@ trainer = DiffusionTrainer(
     model,
     diffusion,
     dataset=dataset,
-    batch_size=128,
+    batch_size=32,
     lr=1e-4,
     device=device,
     ema_decay=0.995, 
-    patience=20,
+    patience=5,
     ckpt_path=ckpt_path,
     is_image_model=False
 )
@@ -109,7 +112,7 @@ if preload:
 else:
     trainer.train(
         steps=trainingSteps,
-        log_every=100
+        log_every=500
     )
     loss = trainer.get_loss_history()
     fig = plt.figure(figsize=(6, 4))
@@ -118,8 +121,14 @@ else:
 
 model.eval()
 
-seq_norms = np.array(diffusion.sample_state(batch_size=5,steps=noisy_states_norm.shape[1]))
-seqs = seq_norms * std + mean  # Denormalize
+batch_size = 5
+seq_len = noisy_states.shape[1]
+
+# Initialize x with proper shape
+x_init = torch.randn(1, seq_len, 1).to(device)
+
+seqs = np.array(diffusion.sample_state(batch_size=batch_size, steps=seq_len, x_init=x_init))
+#seqs = seq_norms * std + mean  # Denormalize
 
 all_seq = seqs.flatten()
 mean = all_seq.mean()
