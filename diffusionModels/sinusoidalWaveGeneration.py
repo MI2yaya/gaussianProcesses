@@ -19,11 +19,13 @@ dataSteps = 10
 dataSamples = 5000
 trainingSteps = 100000
 diffusionTimesteps = 200
-ckpt_path=os.path.join('diffusionModels','data','SinusoidalWaves','DDPM.pt')
+model_type='S4' #MLP, UNet, S4
+ckpt_path=os.path.join('diffusionModels','data','SinusoidalWaves',f'DDPM_{model_type}.pt')
 q=0.001
 np.random.seed(42)
-preload=False
+preload=True
 dt=.05
+
 
 dataRange = np.arange(0, dataSteps, dt)
 
@@ -74,18 +76,43 @@ std = all_noisy.std()
 noisy_states = (noisy_states - mean) / std
 true_states = (true_states - mean) / std
 print(f"Data mean: {mean}, std: {std}, shape {noisy_states.shape}")
-dataset = TensorDataset(
-    torch.tensor(noisy_states,dtype=torch.float32).unsqueeze(-1),
-    torch.tensor(true_states,dtype=torch.float32).unsqueeze(-1) #ignored in noise measurement
-)
-model = S4Backbone(
-    d_input=1,
-    d_output=1,
-    d_model=128,
-    n_layers=6,
-    dropout=0.1,
-    prenorm=False
-).to(device)
+if model_type=='MLP':
+    dataset = TensorDataset(
+        torch.tensor(noisy_states,dtype=torch.float32), # input shape (B,L)
+        torch.tensor(true_states,dtype=torch.float32) #ignored in noise measurement
+    )
+    model = MLP(
+        input_dim=noisy_states.shape[1],
+        hidden_dim=128,
+        time_dim=32,
+        num_res_blocks=2
+    ).to(device)
+elif model_type=='UNet':
+    dataset = TensorDataset(
+        torch.tensor(noisy_states,dtype=torch.float32).unsqueeze(1), #input shape (B,1,L)
+        torch.tensor(true_states,dtype=torch.float32).unsqueeze(1)#ignored in noise measurement
+    )
+    model = UNet(
+        dim=1,
+        in_ch=1,
+        out_ch=1,
+        base_dim=32,
+        dim_mults=(1, 2, 4, 8),
+        time_dim=32
+    ).to(device)
+elif model_type=='S4':
+    dataset = TensorDataset(
+        torch.tensor(noisy_states,dtype=torch.float32).unsqueeze(-1), #input shape (B,L,1)
+        torch.tensor(true_states,dtype=torch.float32).unsqueeze(-1) #ignored in noise measurement
+    )
+    model = S4Backbone(
+        d_input=1,
+        d_output=1,
+        d_model=128,
+        n_layers=6,
+        dropout=0.1,
+        prenorm=False
+    ).to(device)
 
 diffusion = GaussianDiffusion(
     model,
@@ -94,6 +121,7 @@ diffusion = GaussianDiffusion(
     is_image_model=False,
     target='x0'
 ).to(device)
+
 trainer = DiffusionTrainer(
     model,
     diffusion,
@@ -125,10 +153,15 @@ batch_size = 5
 seq_len = noisy_states.shape[1]
 
 # Initialize x with proper shape
-x_init = torch.randn(1, seq_len, 1).to(device)
+if model_type=='MLP':
+    x_init = torch.randn(1, seq_len).to(device)
+elif model_type=='UNet':
+    x_init = torch.randn(1, 1, seq_len).to(device)
+elif model_type=='S4':
+    x_init = torch.randn(1, seq_len, 1).to(device)
 
 seqs = np.array(diffusion.sample_state(batch_size=batch_size, steps=seq_len, x_init=x_init))
-#seqs = seq_norms * std + mean  # Denormalize
+seqs = seqs * std + mean  # Denormalize
 
 all_seq = seqs.flatten()
 mean = all_seq.mean()
@@ -136,9 +169,72 @@ std = all_seq.std()
 print(f"Sampled data mean: {mean}, std: {std}")
 
 fig = plt.figure(figsize=(10, 6))
-plt.title('Generated Sinusoidal Wave')
+plt.title(f'Generated Sinusoidal Wave {model_type}')
 plt.axis('off')
 axis = fig.add_subplot(111)
 for seq in seqs:
     axis.plot(dataRange, seq, label='Generated Wave')
 plt.show()
+
+compare=True
+if compare:
+    state_dict = torch.load(os.path.join('diffusionModels','data','SinusoidalWaves',f'DDPM_MLP.pt'), map_location=device)
+    model = MLP(
+        input_dim=noisy_states.shape[1],
+        hidden_dim=128,
+        time_dim=32,
+        num_res_blocks=2
+    ).to(device)
+    model.load_state_dict(state_dict)
+    x_init=torch.randn(1,seq_len).to(device)
+    seqsMLP = np.array(diffusion.sample_state(batch_size=batch_size, steps=seq_len, x_init=x_init))
+    seqsMLP = seqsMLP * std + mean  
+
+    state_dict = torch.load(os.path.join('diffusionModels','data','SinusoidalWaves',f'DDPM_UNET.pt'), map_location=device)
+    model = UNet(
+        dim=1,
+        in_ch=1,
+        out_ch=1,
+        base_dim=32,
+        dim_mults=(1, 2, 4, 8),
+        time_dim=32
+    ).to(device)
+    model.load_state_dict(state_dict)
+    x_init = torch.randn(1, 1, seq_len).to(device)
+    seqsUNET = np.array(diffusion.sample_state(batch_size=batch_size, steps=seq_len, x_init=x_init))
+    seqsUNET = seqsUNET * std + mean  
+
+    state_dict = torch.load(os.path.join('diffusionModels','data','SinusoidalWaves',f'DDPM_S4.pt'), map_location=device)
+    model = S4Backbone(
+        d_input=1,
+        d_output=1,
+        d_model=128,
+        n_layers=6,
+        dropout=0.1,
+        prenorm=False
+    ).to(device)
+    model.load_state_dict(state_dict)
+    x_init = torch.randn(1, seq_len, 1).to(device)
+    seqsS4 = np.array(diffusion.sample_state(batch_size=batch_size, steps=seq_len, x_init=x_init))
+    seqsS4 = seqsS4 * std + mean  
+
+
+    fig = plt.figure(figsize=(10, 6))
+    plt.title(f'Generated Sinusoidal Waves')
+    plt.axis('off')
+    axis = fig.add_subplot(311)
+    axis.title('MLP')
+    for seq in seqsMLP:
+        axis.plot(dataRange, seq)
+    axis2 = fig.add_subplot(312)
+    axis2.title('UNet')
+    for seq in seqsUNET:
+        axis2.plot(dataRange, seq)
+    axis3 = fig.add_subplot(313)
+    axis3.title("S4")
+    for seq in seqsS4:
+        axis3.plot(dataRange, seq)
+    
+    
+    
+    plt.show()
